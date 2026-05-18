@@ -23,6 +23,21 @@ export type WebasystCategoryTreeItem = {
   children?: WebasystCategoryTreeItem[];
 };
 
+export type WebasystProductSearchItem = {
+  id: number | string;
+  name?: string;
+  params?: string;
+  skus?: Array<{
+    id?: number | string;
+    product_id?: number | string;
+    sku?: string | number;
+  }> | Record<string, {
+    id?: number | string;
+    product_id?: number | string;
+    sku?: string | number;
+  }>;
+};
+
 export class WebasystApi {
   private readonly http: AxiosInstance;
 
@@ -41,6 +56,14 @@ export class WebasystApi {
   async updateProduct(productId: number, product: WebasystProduct): Promise<number | undefined> {
     const response = await this.postForm("shop.product.update", product, { id: String(productId) });
     return extractId(response) ?? productId;
+  }
+
+  async findProductBySupplierIdentity(externalId: string, sku: string): Promise<number | undefined> {
+    const candidates = await this.searchProductsBySku(sku);
+    const exact = candidates.find((product) => {
+      return productContainsSku(product, sku) || productContainsExternalId(product, externalId);
+    });
+    return exact ? toNumberId(exact.id) : undefined;
   }
 
   async addProductImage(productId: number, image: DownloadedImage): Promise<void> {
@@ -67,6 +90,31 @@ export class WebasystApi {
       parent_id: String(parentId)
     });
     return extractArray<WebasystCategoryTreeItem>(response);
+  }
+
+  private async searchProductsBySku(sku: string): Promise<WebasystProductSearchItem[]> {
+    const hashes = [
+      `search/sku=${encodeURIComponent(sku)}`,
+      `search/query=${encodeURIComponent(sku)}`
+    ];
+    const found: WebasystProductSearchItem[] = [];
+    const seen = new Set<number>();
+
+    for (const hash of hashes) {
+      const response = await this.getJson("shop.product.search", {
+        hash,
+        limit: "20",
+        fields: "*,skus"
+      });
+      for (const product of extractArray<WebasystProductSearchItem>(response)) {
+        const id = toNumberId(product.id);
+        if (id === undefined || seen.has(id)) continue;
+        seen.add(id);
+        found.push(product);
+      }
+    }
+
+    return found;
   }
 
   private async postForm(method: string, payload: Record<string, unknown>, query: Record<string, string> = {}): Promise<WebasystResponse> {
@@ -181,8 +229,20 @@ function extractArray<T>(response: WebasystResponse): T[] {
   if (response.data && typeof response.data === "object") {
     const record = response.data as Record<string, unknown>;
     if (Array.isArray(record.categories)) return record.categories as T[];
+    if (Array.isArray(record.products)) return record.products as T[];
   }
   return [];
+}
+
+function productContainsSku(product: WebasystProductSearchItem, sku: string): boolean {
+  const skus = product.skus;
+  if (!skus) return false;
+  const values = Array.isArray(skus) ? skus : Object.values(skus);
+  return values.some((item) => String(item.sku ?? "") === sku);
+}
+
+function productContainsExternalId(product: WebasystProductSearchItem, externalId: string): boolean {
+  return typeof product.params === "string" && product.params.includes(`supplier_external_id=${externalId}`);
 }
 
 function assertWebasystOk(response: WebasystResponse): void {

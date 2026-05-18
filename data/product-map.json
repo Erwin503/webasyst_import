@@ -1,1 +1,37 @@
-{}
+{
+  "40104": {
+    "webasyst_product_id": 129542,
+    "sku": "40104",
+    "updated_at": "2026-05-18T20:15:29.950Z"
+  },
+  "40304": {
+    "webasyst_product_id": 129543,
+    "sku": "40304",
+    "updated_at": "2026-05-18T20:15:52.833Z"
+  },
+  "40306": {
+    "webasyst_product_id": 129544,
+    "sku": "40306",
+    "updated_at": "2026-05-18T20:16:02.666Z"
+  },
+  "40347": {
+    "webasyst_product_id": 129545,
+    "sku": "40347",
+    "updated_at": "2026-05-18T20:16:15.251Z"
+  },
+  "40372": {
+    "webasyst_product_id": 129546,
+    "sku": "40372",
+    "updated_at": "2026-05-18T20:16:27.356Z"
+  },
+  "40373": {
+    "webasyst_product_id": 129547,
+    "sku": "40373",
+    "updated_at": "2026-05-18T20:16:36.749Z"
+  },
+  "40414": {
+    "webasyst_product_id": 129548,
+    "sku": "40414",
+    "updated_at": "2026-05-18T20:16:43.132Z"
+  }
+}

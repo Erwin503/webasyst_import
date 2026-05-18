@@ -2,6 +2,7 @@ import { loadSupplierOnlyConfig } from "./config.js";
 import { logger } from "./logger.js";
 import { normalizeSupplierProduct, shouldSkipProduct } from "./productMapper.js";
 import { SupplierApi } from "./supplierApi.js";
+import { TelegramNotifier } from "./telegramNotifier.js";
 
 async function main(): Promise<void> {
   const config = loadSupplierOnlyConfig();
@@ -14,6 +15,15 @@ async function main(): Promise<void> {
   const valid = products.length - skipped.length;
   const withImages = products.filter((product) => (product.images?.length ?? 0) > 0).length;
   const withCategoryPath = products.filter((product) => (product.supplierCategoryPath?.length ?? 0) > 0).length;
+
+  await new TelegramNotifier(config).notifySupplierProductsFetched({
+    source: "checkSupplierProducts",
+    products,
+    valid,
+    skipped: skipped.length,
+    importLimit: config.importLimit,
+    dryRun: true
+  });
 
   console.log("");
   console.log("Supplier products check");

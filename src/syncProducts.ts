@@ -4,6 +4,7 @@ import { logger } from "./logger.js";
 import { mapSupplierToWebasyst, normalizeSupplierProduct, shouldSkipProduct } from "./productMapper.js";
 import { ProductMapStore } from "./productMapStore.js";
 import { SupplierApi } from "./supplierApi.js";
+import { TelegramNotifier } from "./telegramNotifier.js";
 import { SupplierProduct } from "./types.js";
 import { WebasystApi } from "./webasystApi.js";
 
@@ -24,6 +25,15 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
   const supplierCategories = await supplierApi.getCategories();
   const rawProducts = await supplierApi.getProducts(config.importLimit);
   const products = rawProducts.map(normalizeSupplierProduct);
+  const precheck = products.map((product) => shouldSkipProduct(product));
+  await new TelegramNotifier(config).notifySupplierProductsFetched({
+    source: "syncProducts",
+    products,
+    valid: precheck.filter((reason) => !reason).length,
+    skipped: precheck.filter(Boolean).length,
+    importLimit: config.importLimit,
+    dryRun: config.dryRun
+  });
   const categorySyncResult = await syncCategories(supplierCategories, products, config, webasystApi);
   const stats: SyncStats = {
     totalReceived: products.length,
@@ -50,7 +60,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
 
       const categoryId = resolveProductCategoryId(product, config, categorySyncResult.categoryIds);
       const webasystProduct = mapSupplierToWebasyst(product, config, categoryId);
-      const mapEntry = productMapStore.get(product.id);
+      let mapEntry = productMapStore.get(product.id);
 
       if (config.dryRun) {
         logger.info(`DRY_RUN: would ${mapEntry ? "update" : "create"} product`, {
@@ -65,6 +75,23 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
         continue;
       }
 
+      if (!mapEntry) {
+        const existingProductId = await webasystApi.findProductBySupplierIdentity(product.id, product.sku);
+        if (existingProductId) {
+          productMapStore.set(product.id, {
+            webasyst_product_id: existingProductId,
+            sku: product.sku
+          });
+          await productMapStore.save();
+          mapEntry = productMapStore.get(product.id);
+          logger.info("Linked existing Webasyst product to supplier product", {
+            externalId: product.id,
+            sku: product.sku,
+            webasystProductId: existingProductId
+          });
+        }
+      }
+
       if (mapEntry) {
         const updatedId = await webasystApi.updateProduct(mapEntry.webasyst_product_id, webasystProduct);
         if (!updatedId) {
@@ -74,6 +101,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
           webasyst_product_id: updatedId,
           sku: product.sku
         });
+        await productMapStore.save();
         stats.updated += 1;
         logger.info("Product updated", { externalId: product.id, webasystProductId: updatedId });
       } else {
@@ -82,11 +110,12 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
           throw new Error("Webasyst create response did not contain product id; mapping was not saved");
         }
 
-        await uploadImagesForCreatedProduct(supplierApi, webasystApi, createdId, product);
         productMapStore.set(product.id, {
           webasyst_product_id: createdId,
           sku: product.sku
         });
+        await productMapStore.save();
+        await uploadImagesForCreatedProduct(supplierApi, webasystApi, createdId, product);
         stats.created += 1;
         logger.info("Product created", { externalId: product.id, webasystProductId: createdId });
       }
