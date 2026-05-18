@@ -18,6 +18,9 @@ logs/
 log/
 *.log
 *.log.*
+data/product-map.json
+data/category-map.json
+data/telegram-state.json
 pids/
 *.pid
 *.pid.lock
