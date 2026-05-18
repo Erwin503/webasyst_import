@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Logs and runtime files
+logs/
+log/
+*.log
+*.log.*
+pids/
+*.pid
+*.pid.lock
+*.seed
+
+# Uploads
+uploads/
+
+# Coverage and caches
+coverage/
+.nyc_output/
+.cache/
+temp/
+tmp/
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
