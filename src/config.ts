@@ -23,9 +23,9 @@ export type AppConfig = {
   telegram: {
     botToken?: string;
     chatIds: string[];
-    notifyEverySupplierRequests: number;
     statePath: string;
   };
+  supplierSyncIntervalHours: number;
   priceMarkupPercent: number;
   importLimit?: number;
   dryRun: boolean;
@@ -58,6 +58,7 @@ export function loadConfig(): AppConfig {
     },
     supplierCategoryMode: categoryModeEnv("SUPPLIER_CATEGORY_MODE", "single"),
     telegram: telegramConfig(),
+    supplierSyncIntervalHours: positiveNumberEnv("SUPPLIER_SYNC_INTERVAL_HOURS", 1),
     priceMarkupPercent: numberEnv("PRICE_MARKUP_PERCENT", 0),
     importLimit: optionalNumber("IMPORT_LIMIT"),
     dryRun: booleanEnv("DRY_RUN", true),
@@ -90,6 +91,7 @@ export function loadSupplierOnlyConfig(): AppConfig {
     },
     supplierCategoryMode: categoryModeEnv("SUPPLIER_CATEGORY_MODE", "single"),
     telegram: telegramConfig(),
+    supplierSyncIntervalHours: positiveNumberEnv("SUPPLIER_SYNC_INTERVAL_HOURS", 1),
     priceMarkupPercent: numberEnv("PRICE_MARKUP_PERCENT", 0),
     importLimit: optionalNumber("IMPORT_LIMIT"),
     dryRun: true,
@@ -163,7 +165,6 @@ function telegramConfig(): AppConfig["telegram"] {
   return {
     botToken: optional("TELEGRAM_BOT_TOKEN"),
     chatIds: csvEnv("TELEGRAM_CHAT_IDS"),
-    notifyEverySupplierRequests: positiveIntegerEnv("TELEGRAM_NOTIFY_EVERY_SUPPLIER_REQUESTS", 1),
     statePath: path.resolve(process.cwd(), "data", "telegram-state.json")
   };
 }
@@ -181,6 +182,16 @@ function positiveIntegerEnv(name: string, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function positiveNumberEnv(name: string, fallback: number): number {
+  const value = optional(name);
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive number`);
   }
   return parsed;
 }

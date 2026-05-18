@@ -35,15 +35,6 @@ export class TelegramNotifier {
       state.lastSupplierProductRequestAt = new Date().toISOString();
       await this.saveState(state);
 
-      const every = this.config.telegram.notifyEverySupplierRequests;
-      if (state.supplierProductRequestCount % every !== 0) {
-        logger.info("Telegram supplier products log skipped by frequency", {
-          supplierProductRequestCount: state.supplierProductRequestCount,
-          notifyEverySupplierRequests: every
-        });
-        return;
-      }
-
       const message = buildSupplierProductsMessage(log, state.supplierProductRequestCount);
       await this.sendMessage(message);
     } catch (error) {
@@ -99,22 +90,15 @@ export class TelegramNotifier {
 }
 
 function buildSupplierProductsMessage(log: SupplierProductsLog, requestCount: number): string {
-  const sample = log.products.slice(0, 3).map((product) => {
-    return `- ${escapeHtml(product.sku)} | ${escapeHtml(product.name)} | ${product.price} ${escapeHtml(product.currency ?? "")}`;
-  });
-
   return [
-    "<b>Supplier products request</b>",
-    `Source: ${escapeHtml(log.source)}`,
-    `Request #: ${requestCount}`,
-    `Received: ${log.products.length}`,
-    `Valid: ${log.valid}`,
-    `Skipped: ${log.skipped}`,
-    `Import limit: ${log.importLimit ?? "none"}`,
-    `Dry run: ${log.dryRun ? "true" : "false"}`,
-    sample.length > 0 ? "" : undefined,
-    sample.length > 0 ? "<b>Sample</b>" : undefined,
-    ...sample
+    "<b>Сверка товаров поставщика</b>",
+    `Источник: ${escapeHtml(log.source)}`,
+    `Запрос №: ${requestCount}`,
+    `Получено товаров: ${log.products.length}`,
+    `Валидных к импорту: ${log.valid}`,
+    `Пропущено: ${log.skipped}`,
+    `IMPORT_LIMIT: ${log.importLimit ?? "не задан"}`,
+    `DRY_RUN: ${log.dryRun ? "true" : "false"}`
   ].filter((line): line is string => line !== undefined).join("\n");
 }
 
