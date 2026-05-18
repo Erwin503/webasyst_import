@@ -16,9 +16,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
-COPY data ./data
 
 RUN useradd --create-home --uid 10001 appuser \
+  && mkdir -p /app/data \
   && chown -R appuser:appuser /app
 
 USER appuser
