@@ -8,3 +8,14 @@ services:
     volumes:
       - ./data:/app/data
     restart: "no"
+
+  supplier-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["node", "dist/worker.js"]
+    restart: unless-stopped
