@@ -226,6 +226,8 @@ const adminHtml = String.raw`<!doctype html>
         renderTree(node.children || []) + '</li>').join('') + '</ul>';
     }
     function bindCategoryTree() {
+      applyInitialInheritedChecks();
+      applyInitialInheritedMarkups();
       document.querySelectorAll('#categories [data-key]').forEach((checkbox) => {
         checkbox.addEventListener('change', () => {
           const li = checkbox.closest('li');
@@ -236,6 +238,15 @@ const adminHtml = String.raw`<!doctype html>
           updateParentChecks(checkbox);
         });
       });
+      document.querySelectorAll('#categories [data-markup]').forEach((input) => {
+        input.addEventListener('input', () => {
+          const li = input.closest('li');
+          li.querySelectorAll('ul [data-markup]').forEach((child) => {
+            child.value = input.value;
+          });
+          clearParentMarkups(input);
+        });
+      });
       document.querySelectorAll('#categories .toggle').forEach((button) => {
         button.addEventListener('click', () => {
           const li = button.closest('li');
@@ -244,6 +255,40 @@ const adminHtml = String.raw`<!doctype html>
         });
       });
       document.querySelectorAll('#categories [data-key]').forEach(updateParentChecks);
+    }
+    function applyInitialInheritedChecks() {
+      document.querySelectorAll('#categories [data-key]:checked').forEach((checkbox) => {
+        checkbox.closest('li').querySelectorAll('ul [data-key]').forEach((child) => {
+          child.checked = true;
+          child.indeterminate = false;
+        });
+      });
+    }
+    function applyInitialInheritedMarkups() {
+      document.querySelectorAll('#categories [data-markup]').forEach((input) => {
+        const parentMarkup = findNearestParentMarkup(input);
+        if (input.value.trim() === '' && parentMarkup) {
+          input.value = parentMarkup;
+        }
+      });
+    }
+    function findNearestParentMarkup(input) {
+      let parentLi = input.closest('ul')?.closest('li');
+      while (parentLi) {
+        const parentInput = parentLi.querySelector(':scope > .node [data-markup]');
+        const value = parentInput?.value.trim();
+        if (value !== '') return value;
+        parentLi = parentLi.closest('ul')?.closest('li');
+      }
+      return '';
+    }
+    function clearParentMarkups(input) {
+      let parentLi = input.closest('ul')?.closest('li');
+      while (parentLi) {
+        const parentInput = parentLi.querySelector(':scope > .node [data-markup]');
+        if (parentInput) parentInput.value = '';
+        parentLi = parentLi.closest('ul')?.closest('li');
+      }
     }
     function updateParentChecks(fromCheckbox) {
       let parentLi = fromCheckbox.closest('ul')?.closest('li');
