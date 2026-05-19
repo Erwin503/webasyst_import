@@ -1,14 +1,20 @@
 import { loadSupplierOnlyConfig } from "./config.js";
+import { createDb } from "./db.js";
 import { logger } from "./logger.js";
 import { normalizeSupplierProduct, shouldSkipProduct } from "./productMapper.js";
 import { SupplierApi } from "./supplierApi.js";
+import { SupplierDataRepository } from "./supplierDataRepository.js";
 import { TelegramNotifier } from "./telegramNotifier.js";
 
 async function main(): Promise<void> {
   const config = loadSupplierOnlyConfig();
   const supplierApi = new SupplierApi(config);
+  const supplierDataRepository = new SupplierDataRepository(createDb(config));
+  const supplierCategories = await supplierApi.getCategories();
   const rawProducts = await supplierApi.getProducts(config.importLimit);
   const products = rawProducts.map(normalizeSupplierProduct);
+  await supplierDataRepository.saveSnapshot(supplierCategories, products);
+  await supplierDataRepository.destroy();
   const skipped = products
     .map((product) => ({ product, reason: shouldSkipProduct(product) }))
     .filter((item) => item.reason);

@@ -1,9 +1,11 @@
 import { AppConfig } from "./config.js";
 import { resolveProductCategoryId, syncCategories } from "./categorySync.js";
+import { createDb } from "./db.js";
 import { logger } from "./logger.js";
 import { mapSupplierToWebasyst, normalizeSupplierProduct, shouldSkipProduct } from "./productMapper.js";
 import { ProductMapStore } from "./productMapStore.js";
 import { SupplierApi } from "./supplierApi.js";
+import { SupplierDataRepository } from "./supplierDataRepository.js";
 import { TelegramNotifier } from "./telegramNotifier.js";
 import { SupplierProduct } from "./types.js";
 import { WebasystApi } from "./webasystApi.js";
@@ -19,12 +21,17 @@ export type SyncStats = {
 export async function syncProducts(config: AppConfig): Promise<SyncStats> {
   const supplierApi = new SupplierApi(config);
   const webasystApi = new WebasystApi(config);
+  const supplierDataRepository = new SupplierDataRepository(createDb(config));
   const productMapStore = new ProductMapStore(config.productMapPath);
-  await productMapStore.load();
+  try {
+    await productMapStore.load();
 
   const supplierCategories = await supplierApi.getCategories();
   const rawProducts = await supplierApi.getProducts(config.importLimit);
-  const products = rawProducts.map(normalizeSupplierProduct);
+  const allProducts = rawProducts.map(normalizeSupplierProduct);
+  await supplierDataRepository.saveSnapshot(supplierCategories, allProducts);
+  const categoryRules = supplierDataRepository.enabled ? await supplierDataRepository.getCategoryRules() : undefined;
+  const products = categoryRules ? allProducts.filter((product) => isProductCategoryEnabled(product, categoryRules.enabledCategoryKeys)) : allProducts;
   const precheck = products.map((product) => shouldSkipProduct(product));
   await new TelegramNotifier(config).notifySupplierProductsFetched({
     source: "syncProducts",
@@ -36,7 +43,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
   });
   const categorySyncResult = await syncCategories(supplierCategories, products, config, webasystApi);
   const stats: SyncStats = {
-    totalReceived: products.length,
+    totalReceived: allProducts.length,
     created: 0,
     updated: 0,
     skipped: 0,
@@ -45,6 +52,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
 
   logger.info("Starting sync", {
     totalReceived: stats.totalReceived,
+    selectedForSync: products.length,
     dryRun: config.dryRun,
     importLimit: config.importLimit
   });
@@ -59,7 +67,8 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
       }
 
       const categoryId = resolveProductCategoryId(product, config, categorySyncResult.categoryIds);
-      const webasystProduct = mapSupplierToWebasyst(product, config, categoryId);
+      const markupPercent = categoryRules ? getProductCategoryMarkup(product, categoryRules.markupByCategoryKey) : undefined;
+      const webasystProduct = mapSupplierToWebasyst(product, config, categoryId, markupPercent);
       let mapEntry = productMapStore.get(product.id);
 
       if (config.dryRun) {
@@ -133,8 +142,36 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
     await productMapStore.save();
   }
 
-  logger.info("Sync finished", stats);
-  return stats;
+    logger.info("Sync finished", stats);
+    return stats;
+  } finally {
+    await supplierDataRepository.destroy();
+  }
+}
+
+function isProductCategoryEnabled(product: SupplierProduct, enabledCategoryKeys: Set<string>): boolean {
+  return getProductCategoryKeys(product).some((key) => enabledCategoryKeys.has(key));
+}
+
+function getProductCategoryMarkup(product: SupplierProduct, markupByCategoryKey: Map<string, number>): number | undefined {
+  const keys = getProductCategoryKeys(product);
+  for (let index = keys.length - 1; index >= 0; index -= 1) {
+    const markup = markupByCategoryKey.get(keys[index]);
+    if (markup !== undefined) return markup;
+  }
+  return undefined;
+}
+
+function getProductCategoryKeys(product: SupplierProduct): string[] {
+  const keys: string[] = [];
+  const path = product.supplierCategoryPath ?? product.categoryPath;
+  if (path?.length) {
+    for (let index = 1; index <= path.length; index += 1) {
+      keys.push(path.slice(0, index).join(" > "));
+    }
+  }
+  if (product.supplierCategoryId) keys.push(product.supplierCategoryId);
+  return keys;
 }
 
 async function uploadImagesForCreatedProduct(

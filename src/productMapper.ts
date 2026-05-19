@@ -51,8 +51,9 @@ export function normalizeSupplierProduct(raw: RawSupplierProduct): SupplierProdu
   };
 }
 
-export function mapSupplierToWebasyst(product: SupplierProduct, config: AppConfig, categoryId?: number): WebasystProduct {
-  const finalPrice = roundMoney(product.price * (1 + config.priceMarkupPercent / 100));
+export function mapSupplierToWebasyst(product: SupplierProduct, config: AppConfig, categoryId?: number, markupPercent?: number): WebasystProduct {
+  const markup = markupPercent ?? config.priceMarkupPercent;
+  const finalPrice = roundMoney(product.price * (1 + markup / 100));
   const stock = resolveStock(product, config);
   const sku: WebasystSku = {
     sku: product.sku || product.id,

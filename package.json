@@ -9,14 +9,22 @@
     "dev": "tsx src/index.ts",
     "worker": "tsx src/worker.ts",
     "worker:build": "node dist/worker.js",
+    "admin": "tsx src/adminServer.ts",
+    "admin:build": "node dist/adminServer.js",
     "check:supplier": "tsx src/checkSupplierProducts.ts",
-    "check:supplier:build": "node dist/checkSupplierProducts.js"
+    "check:supplier:build": "node dist/checkSupplierProducts.js",
+    "db:migrate": "knex migrate:latest --knexfile knexfile.cjs",
+    "db:rollback": "knex migrate:rollback --knexfile knexfile.cjs"
   },
   "dependencies": {
     "axios": "^1.7.9",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "knex": "^3.2.10",
+    "mysql2": "^3.22.3"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^20.17.10",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

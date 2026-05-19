@@ -25,6 +25,19 @@ export type AppConfig = {
     chatIds: string[];
     statePath: string;
   };
+  database: {
+    enabled: boolean;
+    host?: string;
+    port: number;
+    database?: string;
+    user?: string;
+    password?: string;
+    ssl: boolean;
+  };
+  admin: {
+    port: number;
+    password?: string;
+  };
   supplierSyncIntervalHours: number;
   priceMarkupPercent: number;
   importLimit?: number;
@@ -58,6 +71,8 @@ export function loadConfig(): AppConfig {
     },
     supplierCategoryMode: categoryModeEnv("SUPPLIER_CATEGORY_MODE", "single"),
     telegram: telegramConfig(),
+    database: databaseConfig(),
+    admin: adminConfig(),
     supplierSyncIntervalHours: positiveNumberEnv("SUPPLIER_SYNC_INTERVAL_HOURS", 1),
     priceMarkupPercent: numberEnv("PRICE_MARKUP_PERCENT", 0),
     importLimit: optionalNumber("IMPORT_LIMIT"),
@@ -91,6 +106,8 @@ export function loadSupplierOnlyConfig(): AppConfig {
     },
     supplierCategoryMode: categoryModeEnv("SUPPLIER_CATEGORY_MODE", "single"),
     telegram: telegramConfig(),
+    database: databaseConfig(),
+    admin: adminConfig(),
     supplierSyncIntervalHours: positiveNumberEnv("SUPPLIER_SYNC_INTERVAL_HOURS", 1),
     priceMarkupPercent: numberEnv("PRICE_MARKUP_PERCENT", 0),
     importLimit: optionalNumber("IMPORT_LIMIT"),
@@ -166,6 +183,30 @@ function telegramConfig(): AppConfig["telegram"] {
     botToken: optional("TELEGRAM_BOT_TOKEN"),
     chatIds: csvEnv("TELEGRAM_CHAT_IDS"),
     statePath: path.resolve(process.cwd(), "data", "telegram-state.json")
+  };
+}
+
+function databaseConfig(): AppConfig["database"] {
+  const host = optional("MYSQL_HOST");
+  const database = optional("MYSQL_DATABASE");
+  const user = optional("MYSQL_USER");
+  const enabled = booleanEnv("MYSQL_ENABLED", Boolean(host && database && user));
+
+  return {
+    enabled,
+    host,
+    port: numberEnv("MYSQL_PORT", 3306),
+    database,
+    user,
+    password: optional("MYSQL_PASSWORD"),
+    ssl: booleanEnv("MYSQL_SSL", false)
+  };
+}
+
+function adminConfig(): AppConfig["admin"] {
+  return {
+    port: positiveIntegerEnv("ADMIN_PORT", 3000),
+    password: optional("ADMIN_PASSWORD")
   };
 }
 

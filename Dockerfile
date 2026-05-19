@@ -16,6 +16,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
+COPY knexfile.cjs ./
+COPY migrations ./migrations
+COPY docker-entrypoint.cjs ./
 
 RUN useradd --create-home --uid 10001 appuser \
   && mkdir -p /app/data \
@@ -23,4 +26,5 @@ RUN useradd --create-home --uid 10001 appuser \
 
 USER appuser
 
+ENTRYPOINT ["node", "docker-entrypoint.cjs"]
 CMD ["node", "dist/index.js"]

@@ -1,5 +1,98 @@
 # supplier-sync
 
+## Admin UI
+
+Веб-интерфейс управления импортом запускается командой:
+
+```bash
+npm run admin
+```
+
+После сборки:
+
+```bash
+npm run build
+npm run admin:build
+```
+
+Через Docker:
+
+```bash
+docker compose up -d --build supplier-admin
+```
+
+Открыть:
+
+```text
+http://localhost:3000
+```
+
+Логин для Basic Auth:
+
+```text
+admin
+```
+
+Пароль задается в `.env`:
+
+```dotenv
+ADMIN_PORT=3000
+ADMIN_PASSWORD=change-me
+```
+
+В интерфейсе можно:
+
+- получить категории поставщика и сохранить их в БД;
+- выбрать категории для загрузки;
+- задать положительную или отрицательную наценку по категории;
+- получить товары поставщика и сохранить их в БД;
+- вручную запустить загрузку выбранных товаров в Webasyst;
+- посмотреть статус worker;
+- изменить частоту worker в БД;
+- запустить или остановить worker.
+
+Выбор родительской категории включает все дочерние категории.
+
+## MySQL через Knex
+
+Скрипт может сохранять категории и товары поставщика в MySQL. Включается через `.env`:
+
+```dotenv
+MYSQL_ENABLED=true
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_DATABASE=webasyst_import
+MYSQL_USER=webasyst_import
+MYSQL_PASSWORD=password
+MYSQL_SSL=false
+```
+
+Если `MYSQL_ENABLED=false` или не заполнены `MYSQL_HOST`, `MYSQL_DATABASE`, `MYSQL_USER`, слой БД отключен и скрипт работает как раньше.
+
+Перед сохранением данных нужно применить миграции:
+
+```bash
+npm run db:migrate
+```
+
+Откат последней миграции:
+
+```bash
+npm run db:rollback
+```
+
+Миграции создают таблицы:
+
+- `supplier_categories`
+- `supplier_products`
+
+Данные сохраняются через upsert:
+
+- категории по `supplier_category_key`;
+- товары по `supplier_product_id`.
+
+Сохранение выполняется в командах `npm run check:supplier`, `npm run dev`, `npm start`, `npm run worker`.
+
 ## Telegram-логи сверки поставщика
 
 После каждого успешного получения и нормализации товаров поставщика скрипт может отправлять короткий отчет в Telegram. Сообщение отправляется на русском и содержит только статистику, без списка товаров. Для включения заполните:

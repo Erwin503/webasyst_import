@@ -19,3 +19,26 @@ services:
       - ./data:/app/data
     command: ["node", "dist/worker.js"]
     restart: unless-stopped
+
+  supplier-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: ["node", "dist/adminServer.js"]
+    ports:
+      - "${ADMIN_PORT:-3000}:${ADMIN_PORT:-3000}"
+    restart: unless-stopped
+
+  db-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    command: ["npx", "knex", "migrate:latest", "--knexfile", "knexfile.cjs"]
+    profiles:
+      - tools
