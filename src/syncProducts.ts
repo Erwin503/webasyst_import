@@ -138,14 +138,62 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
     }
   }
 
-  if (!config.dryRun) {
+  if (!config.dryRun && config.importLimit === undefined) {
+    await hideMissingSupplierProducts(supplierDataRepository, productMapStore, webasystApi, stats);
     await productMapStore.save();
+  } else if (!config.dryRun && config.importLimit !== undefined) {
+    logger.info("Missing supplier product hiding skipped because IMPORT_LIMIT is set", {
+      importLimit: config.importLimit
+    });
   }
 
     logger.info("Sync finished", stats);
     return stats;
   } finally {
     await supplierDataRepository.destroy();
+  }
+}
+
+async function hideMissingSupplierProducts(
+  supplierDataRepository: SupplierDataRepository,
+  productMapStore: ProductMapStore,
+  webasystApi: WebasystApi,
+  stats: SyncStats
+): Promise<void> {
+  if (!supplierDataRepository.enabled) return;
+
+  const missingProducts = await supplierDataRepository.getMissingProductsForWebasystHide();
+  for (const missing of missingProducts) {
+    try {
+      const mapEntry = productMapStore.get(missing.supplierProductId);
+      const webasystProductId = mapEntry?.webasyst_product_id
+        ?? await webasystApi.findProductBySupplierIdentity(missing.supplierProductId, missing.sku);
+
+      if (!webasystProductId) {
+        logger.warn("Missing supplier product was not found in Webasyst, cannot hide", missing);
+        await supplierDataRepository.markProductHiddenInWebasyst(missing.supplierProductId);
+        continue;
+      }
+
+      await webasystApi.hideProduct(webasystProductId, missing.supplierProductId);
+      productMapStore.set(missing.supplierProductId, {
+        webasyst_product_id: webasystProductId,
+        sku: missing.sku
+      });
+      await productMapStore.save();
+      await supplierDataRepository.markProductHiddenInWebasyst(missing.supplierProductId);
+      stats.updated += 1;
+      logger.info("Missing supplier product hidden in Webasyst", {
+        supplierProductId: missing.supplierProductId,
+        webasystProductId
+      });
+    } catch (error) {
+      stats.errors += 1;
+      logger.error("Failed to hide missing supplier product", {
+        supplierProductId: missing.supplierProductId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 }
 

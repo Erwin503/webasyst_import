@@ -58,6 +58,18 @@ export class WebasystApi {
     return extractId(response) ?? productId;
   }
 
+  async hideProduct(productId: number, externalId: string): Promise<void> {
+    await this.postForm("shop.product.update", {
+      status: 0,
+      params: [
+        `supplier_external_id=${externalId}`,
+        "supplier_source=external_api",
+        "supplier_missing=1",
+        `supplier_missing_at=${new Date().toISOString()}`
+      ].join("\n")
+    }, { id: String(productId) });
+  }
+
   async findProductBySupplierIdentity(externalId: string, sku: string): Promise<number | undefined> {
     const candidates = await this.searchProductsBySku(sku);
     const exact = candidates.find((product) => {
