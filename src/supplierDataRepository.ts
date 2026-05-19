@@ -13,7 +13,7 @@ export class SupplierDataRepository {
     if (!this.db) return;
 
     await this.saveCategories(categories);
-    await this.saveProducts(products);
+    await this.saveProducts(products, new Date());
 
     logger.info("Supplier snapshot saved to MySQL", {
       categories: flattenCategories(categories).length,
@@ -139,6 +139,26 @@ export class SupplierDataRepository {
       .limit(limit);
   }
 
+  async getMissingProductsForWebasystHide(): Promise<MissingSupplierProduct[]> {
+    const rows = await this.requireDb()("supplier_products")
+      .select("supplier_product_id", "sku")
+      .where({ is_active_supplier: false, hidden_in_webasyst: false });
+    return rows.map((row) => ({
+      supplierProductId: String(row.supplier_product_id),
+      sku: String(row.sku)
+    }));
+  }
+
+  async markProductHiddenInWebasyst(supplierProductId: string): Promise<void> {
+    await this.requireDb()("supplier_products")
+      .where({ supplier_product_id: supplierProductId })
+      .update({
+        hidden_in_webasyst: true,
+        hidden_in_webasyst_at: new Date(),
+        updated_at: new Date()
+      });
+  }
+
   async destroy(): Promise<void> {
     await this.db?.destroy();
   }
@@ -166,7 +186,15 @@ export class SupplierDataRepository {
     ]);
   }
 
-  private async saveProducts(products: SupplierProduct[]): Promise<void> {
+  private async saveProducts(products: SupplierProduct[], seenAt: Date): Promise<void> {
+    const db = this.requireDb();
+    await db("supplier_products")
+      .update({
+        is_active_supplier: false,
+        missing_since: db.raw("COALESCE(missing_since, NOW())"),
+        updated_at: new Date()
+      });
+
     const rows = products.map((product) => {
       return {
         supplier_product_id: product.id,
@@ -184,11 +212,16 @@ export class SupplierDataRepository {
         barcode: product.barcode ?? null,
         features_json: JSON.stringify(product.features ?? {}),
         raw_json: JSON.stringify(product.raw ?? null),
+        is_active_supplier: true,
+        last_seen_at: seenAt,
+        missing_since: null,
+        hidden_in_webasyst: false,
+        hidden_in_webasyst_at: null,
         updated_at: new Date()
       };
     });
 
-    await upsertRows(this.requireDb(), "supplier_products", rows, "supplier_product_id");
+    await upsertRows(db, "supplier_products", rows, "supplier_product_id");
   }
 
   private requireDb(): Knex {
@@ -227,6 +260,11 @@ export type SyncRunStats = {
 export type CategoryRules = {
   enabledCategoryKeys: Set<string>;
   markupByCategoryKey: Map<string, number>;
+};
+
+export type MissingSupplierProduct = {
+  supplierProductId: string;
+  sku: string;
 };
 
 function flattenCategories(categories: SupplierCategory[]): SupplierCategory[] {
