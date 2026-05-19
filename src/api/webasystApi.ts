@@ -1,7 +1,7 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
-import { AppConfig } from "./config.js";
+import { AppConfig } from "../config/config.js";
 import { DownloadedImage } from "./supplierApi.js";
-import { WebasystCategory, WebasystProduct } from "./types.js";
+import { WebasystCategory, WebasystProduct } from "../types/domain.js";
 
 type WebasystResponse = {
   status?: "ok" | "fail";

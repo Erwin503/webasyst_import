@@ -1,6 +1,6 @@
 import { Knex } from "knex";
-import { logger } from "./logger.js";
-import { SupplierCategory, SupplierProduct } from "./types.js";
+import { logger } from "../config/logger.js";
+import { SupplierCategory, SupplierProduct } from "../types/domain.js";
 
 export class SupplierDataRepository {
   constructor(private readonly db?: Knex) {}
@@ -142,12 +142,61 @@ export class SupplierDataRepository {
 
   async getMissingProductsForWebasystHide(): Promise<MissingSupplierProduct[]> {
     const rows = await this.requireDb()("supplier_products")
-      .select("supplier_product_id", "sku")
+      .select("supplier_product_id", "sku", "webasyst_product_id")
       .where({ is_active_supplier: false, hidden_in_webasyst: false });
     return rows.map((row) => ({
       supplierProductId: String(row.supplier_product_id),
-      sku: String(row.sku)
+      sku: String(row.sku),
+      webasystProductId: row.webasyst_product_id === null || row.webasyst_product_id === undefined
+        ? undefined
+        : Number(row.webasyst_product_id)
     }));
+  }
+
+  async getProductMapping(supplierProductId: string): Promise<ProductMapping | undefined> {
+    const row = await this.requireDb()("supplier_products")
+      .select("webasyst_product_id", "sku")
+      .where({ supplier_product_id: supplierProductId })
+      .first();
+    if (!row?.webasyst_product_id) return undefined;
+    return {
+      webasystProductId: Number(row.webasyst_product_id),
+      sku: String(row.sku)
+    };
+  }
+
+  async saveProductMapping(supplierProductId: string, webasystProductId: number, sku: string): Promise<void> {
+    await this.requireDb()("supplier_products")
+      .where({ supplier_product_id: supplierProductId })
+      .update({
+        webasyst_product_id: webasystProductId,
+        sku,
+        webasyst_synced_at: new Date(),
+        updated_at: new Date()
+      });
+  }
+
+  async getCategoryMapping(supplierCategoryKey: string): Promise<CategoryMapping | undefined> {
+    const row = await this.requireDb()("supplier_categories")
+      .select("webasyst_category_id", "name", "parent_supplier_category_key")
+      .where({ supplier_category_key: supplierCategoryKey })
+      .first();
+    if (!row?.webasyst_category_id) return undefined;
+    return {
+      webasystCategoryId: Number(row.webasyst_category_id),
+      name: String(row.name),
+      parentSupplierCategoryKey: row.parent_supplier_category_key ? String(row.parent_supplier_category_key) : undefined
+    };
+  }
+
+  async saveCategoryMapping(supplierCategoryKey: string, webasystCategoryId: number): Promise<void> {
+    await this.requireDb()("supplier_categories")
+      .where({ supplier_category_key: supplierCategoryKey })
+      .update({
+        webasyst_category_id: webasystCategoryId,
+        webasyst_synced_at: new Date(),
+        updated_at: new Date()
+      });
   }
 
   async markProductHiddenInWebasyst(supplierProductId: string): Promise<void> {
@@ -267,6 +316,18 @@ export type CategoryRules = {
 export type MissingSupplierProduct = {
   supplierProductId: string;
   sku: string;
+  webasystProductId?: number;
+};
+
+export type ProductMapping = {
+  webasystProductId: number;
+  sku: string;
+};
+
+export type CategoryMapping = {
+  webasystCategoryId: number;
+  name: string;
+  parentSupplierCategoryKey?: string;
 };
 
 function flattenCategories(categories: SupplierCategory[]): SupplierCategory[] {

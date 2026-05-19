@@ -1,7 +1,7 @@
-import { AppConfig } from "./config.js";
-import { createDb } from "./db.js";
-import { logger } from "./logger.js";
-import { SupplierDataRepository } from "./supplierDataRepository.js";
+import { AppConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { createDb } from "../db/db.js";
+import { SupplierDataRepository } from "../repositories/supplierDataRepository.js";
 import { SyncStats, syncProducts } from "./syncProducts.js";
 
 export type WorkerStatus = {

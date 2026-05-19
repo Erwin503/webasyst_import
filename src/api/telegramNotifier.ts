@@ -1,9 +1,9 @@
 import axios, { AxiosError } from "axios";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { AppConfig } from "./config.js";
-import { logger } from "./logger.js";
-import { SupplierProduct } from "./types.js";
+import { AppConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { SupplierProduct } from "../types/domain.js";
 
 type TelegramState = {
   supplierProductRequestCount: number;

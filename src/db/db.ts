@@ -1,5 +1,5 @@
 import knex, { Knex } from "knex";
-import { AppConfig } from "./config.js";
+import { AppConfig } from "../config/config.js";
 
 export function createDb(config: AppConfig): Knex | undefined {
   if (!config.database.enabled) return undefined;

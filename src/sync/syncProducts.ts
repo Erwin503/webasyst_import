@@ -1,14 +1,14 @@
-import { AppConfig } from "./config.js";
+import { SupplierApi } from "../api/supplierApi.js";
+import { TelegramNotifier } from "../api/telegramNotifier.js";
+import { WebasystApi } from "../api/webasystApi.js";
+import { AppConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { createDb } from "../db/db.js";
+import { ProductMapStore } from "../repositories/productMapStore.js";
+import { SupplierDataRepository } from "../repositories/supplierDataRepository.js";
+import { SupplierProduct } from "../types/domain.js";
 import { resolveProductCategoryId, syncCategories } from "./categorySync.js";
-import { createDb } from "./db.js";
-import { logger } from "./logger.js";
 import { mapSupplierToWebasyst, normalizeSupplierProduct, shouldSkipProduct } from "./productMapper.js";
-import { ProductMapStore } from "./productMapStore.js";
-import { SupplierApi } from "./supplierApi.js";
-import { SupplierDataRepository } from "./supplierDataRepository.js";
-import { TelegramNotifier } from "./telegramNotifier.js";
-import { SupplierProduct } from "./types.js";
-import { WebasystApi } from "./webasystApi.js";
 
 export type SyncStats = {
   totalReceived: number;
@@ -24,9 +24,9 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
   const supplierApi = new SupplierApi(config);
   const webasystApi = new WebasystApi(config);
   const supplierDataRepository = new SupplierDataRepository(createDb(config));
-  const productMapStore = new ProductMapStore(config.productMapPath);
+  const productMapStore = supplierDataRepository.enabled ? undefined : new ProductMapStore(config.productMapPath);
   try {
-    await productMapStore.load();
+    await productMapStore?.load();
 
   const supplierCategories = await supplierApi.getCategories();
   const rawProducts = await supplierApi.getProducts(config.importLimit);
@@ -40,7 +40,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
     logger.info("Supplier image URL fetching skipped in DRY_RUN");
   }
   const precheck = products.map((product) => shouldSkipProduct(product));
-  const categorySyncResult = await syncCategories(supplierCategories, products, config, webasystApi);
+  const categorySyncResult = await syncCategories(supplierCategories, products, config, webasystApi, supplierDataRepository);
   const stats: SyncStats = {
     totalReceived: allProducts.length,
     created: 0,
@@ -69,12 +69,12 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
       const categoryId = resolveProductCategoryId(product, config, categorySyncResult.categoryIds);
       const markupPercent = categoryRules ? getProductCategoryMarkup(product, categoryRules.markupByCategoryKey) : undefined;
       const webasystProduct = mapSupplierToWebasyst(product, config, categoryId, markupPercent);
-      let mapEntry = productMapStore.get(product.id);
+      let mapEntry = await getProductMapping(product.id, supplierDataRepository, productMapStore);
 
       if (config.dryRun) {
         logger.info(`DRY_RUN: would ${mapEntry ? "update" : "create"} product`, {
           externalId: product.id,
-          webasystProductId: mapEntry?.webasyst_product_id,
+          webasystProductId: mapEntry?.webasystProductId,
           sku: product.sku,
           name: product.name,
           price: webasystProduct.skus["0"]?.price,
@@ -87,12 +87,8 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
       if (!mapEntry) {
         const existingProductId = await webasystApi.findProductBySupplierIdentity(product.id, product.sku);
         if (existingProductId) {
-          productMapStore.set(product.id, {
-            webasyst_product_id: existingProductId,
-            sku: product.sku
-          });
-          await productMapStore.save();
-          mapEntry = productMapStore.get(product.id);
+          await saveProductMapping(product.id, existingProductId, product.sku, supplierDataRepository, productMapStore);
+          mapEntry = await getProductMapping(product.id, supplierDataRepository, productMapStore);
           logger.info("Linked existing Webasyst product to supplier product", {
             externalId: product.id,
             sku: product.sku,
@@ -102,15 +98,11 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
       }
 
       if (mapEntry) {
-        const updatedId = await webasystApi.updateProduct(mapEntry.webasyst_product_id, webasystProduct);
+        const updatedId = await webasystApi.updateProduct(mapEntry.webasystProductId, webasystProduct);
         if (!updatedId) {
           throw new Error("Webasyst update response did not contain product id");
         }
-        productMapStore.set(product.id, {
-          webasyst_product_id: updatedId,
-          sku: product.sku
-        });
-        await productMapStore.save();
+        await saveProductMapping(product.id, updatedId, product.sku, supplierDataRepository, productMapStore);
         stats.updated += 1;
         logger.info("Product updated", { externalId: product.id, webasystProductId: updatedId });
       } else {
@@ -119,11 +111,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
           throw new Error("Webasyst create response did not contain product id; mapping was not saved");
         }
 
-        productMapStore.set(product.id, {
-          webasyst_product_id: createdId,
-          sku: product.sku
-        });
-        await productMapStore.save();
+        await saveProductMapping(product.id, createdId, product.sku, supplierDataRepository, productMapStore);
         await uploadImagesForCreatedProduct(supplierApi, webasystApi, createdId, product);
         stats.created += 1;
         logger.info("Product created", { externalId: product.id, webasystProductId: createdId });
@@ -140,7 +128,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
 
   if (!config.dryRun && config.importLimit === undefined) {
     await hideMissingSupplierProducts(supplierDataRepository, productMapStore, webasystApi, stats);
-    await productMapStore.save();
+    await productMapStore?.save();
   } else if (!config.dryRun && config.importLimit !== undefined) {
     logger.info("Missing supplier product hiding skipped because IMPORT_LIMIT is set", {
       importLimit: config.importLimit
@@ -182,9 +170,50 @@ function supplierProductHasImage(product: SupplierProduct): boolean {
   return Boolean((product.raw as { has_image?: boolean } | undefined)?.has_image);
 }
 
+type ProductMapping = {
+  webasystProductId: number;
+  sku: string;
+};
+
+async function getProductMapping(
+  supplierProductId: string,
+  supplierDataRepository: SupplierDataRepository,
+  productMapStore?: ProductMapStore
+): Promise<ProductMapping | undefined> {
+  if (supplierDataRepository.enabled) {
+    return supplierDataRepository.getProductMapping(supplierProductId);
+  }
+
+  const entry = productMapStore?.get(supplierProductId);
+  if (!entry) return undefined;
+  return {
+    webasystProductId: entry.webasyst_product_id,
+    sku: entry.sku
+  };
+}
+
+async function saveProductMapping(
+  supplierProductId: string,
+  webasystProductId: number,
+  sku: string,
+  supplierDataRepository: SupplierDataRepository,
+  productMapStore?: ProductMapStore
+): Promise<void> {
+  if (supplierDataRepository.enabled) {
+    await supplierDataRepository.saveProductMapping(supplierProductId, webasystProductId, sku);
+    return;
+  }
+
+  productMapStore?.set(supplierProductId, {
+    webasyst_product_id: webasystProductId,
+    sku
+  });
+  await productMapStore?.save();
+}
+
 async function hideMissingSupplierProducts(
   supplierDataRepository: SupplierDataRepository,
-  productMapStore: ProductMapStore,
+  productMapStore: ProductMapStore | undefined,
   webasystApi: WebasystApi,
   stats: SyncStats
 ): Promise<void> {
@@ -193,8 +222,8 @@ async function hideMissingSupplierProducts(
   const missingProducts = await supplierDataRepository.getMissingProductsForWebasystHide();
   for (const missing of missingProducts) {
     try {
-      const mapEntry = productMapStore.get(missing.supplierProductId);
-      const webasystProductId = mapEntry?.webasyst_product_id
+      const mapEntry = await getProductMapping(missing.supplierProductId, supplierDataRepository, productMapStore);
+      const webasystProductId = missing.webasystProductId ?? mapEntry?.webasystProductId
         ?? await webasystApi.findProductBySupplierIdentity(missing.supplierProductId, missing.sku);
 
       if (!webasystProductId) {
@@ -204,11 +233,7 @@ async function hideMissingSupplierProducts(
       }
 
       await webasystApi.hideProduct(webasystProductId, missing.supplierProductId);
-      productMapStore.set(missing.supplierProductId, {
-        webasyst_product_id: webasystProductId,
-        sku: missing.sku
-      });
-      await productMapStore.save();
+      await saveProductMapping(missing.supplierProductId, webasystProductId, missing.sku, supplierDataRepository, productMapStore);
       await supplierDataRepository.markProductHiddenInWebasyst(missing.supplierProductId);
       stats.updated += 1;
       logger.info("Missing supplier product hidden in Webasyst", {

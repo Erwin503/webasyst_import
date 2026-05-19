@@ -184,9 +184,9 @@ SUPPLIER_CATEGORY_MODE=single
 Под заказ -> Запчасти -> Фильтры -> Воздушные фильтры
 ```
 
-Соответствия сохраняются в `data/category-map.json`. Если поставщик отдает `category_id`, он используется как основной ключ; если ID нет, используется полный путь категории. При создании и обновлении категорий задается `status=1`; для родительских категорий `include_sub_categories=1`.
+Соответствия категорий с Webasyst сохраняются в MySQL в полях `supplier_categories.webasyst_category_id` и `webasyst_synced_at`. Если `MYSQL_ENABLED=false`, используется fallback-файл `data/category-map.json`. Если поставщик отдает `category_id`, он используется как основной ключ; если ID нет, используется полный путь категории. При создании и обновлении категорий задается `status=1`; для родительских категорий `include_sub_categories=1`.
 
-В `DRY_RUN=true` категории в Webasyst не создаются и `data/category-map.json` не меняется. Скрипт только логирует, какие категории были бы созданы.
+В `DRY_RUN=true` категории в Webasyst не создаются, а связи с Webasyst в MySQL или `data/category-map.json` не меняются. Скрипт только логирует, какие категории были бы созданы.
 
 При создании или обновлении товара первым ID в `categories` передается конечная категория поставщика. В Webasyst это делает ее основной категорией товара.
 
@@ -202,7 +202,7 @@ SUPPLIER_CATEGORY_MODE=single
 6. Получает URL изображений методом `platform/products_clients_images/read_new` батчами до 100 SKU.
 7. Создает или обновляет товары в Webasyst методами `shop.product.add` и `shop.product.update`.
 8. Для новых товаров загружает изображения через `shop.product.images.add`.
-9. Хранит соответствия `external_id -> webasyst_product_id` в `data/product-map.json`.
+9. Хранит соответствия `external_id -> webasyst_product_id` в MySQL в полях `supplier_products.webasyst_product_id` и `webasyst_synced_at`; без MySQL используется fallback-файл `data/product-map.json`.
 
 ## Поля API поставщика
 
@@ -316,7 +316,7 @@ supplier_source=external_api
 npm run dev
 ```
 
-При `DRY_RUN=true` запросы в Webasyst не отправляются, `data/product-map.json` не меняется. Скрипт только показывает, какие товары были бы созданы или обновлены.
+При `DRY_RUN=true` запросы в Webasyst не отправляются, связи с Webasyst в MySQL или `data/product-map.json` не меняются. Скрипт только показывает, какие товары были бы созданы или обновлены.
 
 ## Запуск в Docker
 
@@ -332,13 +332,13 @@ docker compose build
 docker compose run --rm supplier-sync
 ```
 
-Файл `data/product-map.json` примонтирован как volume:
+Папка `data` примонтирована как volume для fallback-файлов и служебного состояния:
 
 ```yaml
 ./data:/app/data
 ```
 
-Поэтому карта соответствий сохраняется на хосте и не пропадает после удаления контейнера.
+Если `MYSQL_ENABLED=true`, связи товаров и категорий с Webasyst хранятся в MySQL, а JSON-карты не используются. Если MySQL отключен, fallback-файлы в `data` сохраняются на хосте и не пропадают после удаления контейнера.
 
 Для тестового запуска оставьте в `.env`:
 
@@ -382,14 +382,21 @@ Cron-вариант через Docker:
 
 ## Где менять маппинг
 
-- Нормализация полей поставщика: `src/productMapper.ts`, функция `normalizeSupplierProduct`.
-- Маппинг в Webasyst: `src/productMapper.ts`, функция `mapSupplierToWebasyst`.
-- Запросы к поставщику и объединение статики/цен/картинок: `src/supplierApi.ts`.
-- Методы Webasyst API и форма отправки: `src/webasystApi.ts`.
+- Нормализация полей поставщика: `src/sync/productMapper.ts`, функция `normalizeSupplierProduct`.
+- Маппинг в Webasyst: `src/sync/productMapper.ts`, функция `mapSupplierToWebasyst`.
+- Запросы к поставщику и объединение статики/цен/картинок: `src/api/supplierApi.ts`.
+- Методы Webasyst API и форма отправки: `src/api/webasystApi.ts`.
 
-## Карта товаров
+## Хранение связей с Webasyst
 
-Файл `data/product-map.json` создается автоматически, если отсутствует.
+При `MYSQL_ENABLED=true` связи с Webasyst хранятся в БД:
+
+- `supplier_products.webasyst_product_id`, `supplier_products.webasyst_synced_at`;
+- `supplier_categories.webasyst_category_id`, `supplier_categories.webasyst_synced_at`.
+
+Файлы `data/product-map.json` и `data/category-map.json` используются только как fallback, если MySQL отключен. В режиме с БД они не читаются и не изменяются.
+
+Fallback-файл `data/product-map.json` создается автоматически, если отсутствует.
 
 Формат:
 

@@ -1,10 +1,10 @@
-import { loadSupplierOnlyConfig } from "./config.js";
-import { createDb } from "./db.js";
-import { logger } from "./logger.js";
-import { normalizeSupplierProduct, shouldSkipProduct } from "./productMapper.js";
-import { SupplierApi } from "./supplierApi.js";
-import { SupplierDataRepository } from "./supplierDataRepository.js";
-import { TelegramNotifier } from "./telegramNotifier.js";
+import { SupplierApi } from "../api/supplierApi.js";
+import { TelegramNotifier } from "../api/telegramNotifier.js";
+import { loadSupplierOnlyConfig } from "../config/config.js";
+import { createDb } from "../db/db.js";
+import { logger } from "../config/logger.js";
+import { SupplierDataRepository } from "../repositories/supplierDataRepository.js";
+import { normalizeSupplierProduct, shouldSkipProduct } from "../sync/productMapper.js";
 
 async function main(): Promise<void> {
   const config = loadSupplierOnlyConfig();

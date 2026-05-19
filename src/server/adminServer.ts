@@ -1,11 +1,11 @@
 import express, { NextFunction, Request, Response } from "express";
-import { loadConfig } from "./config.js";
-import { createDb } from "./db.js";
-import { logger } from "./logger.js";
-import { normalizeSupplierProduct } from "./productMapper.js";
-import { SupplierApi } from "./supplierApi.js";
-import { SupplierDataRepository } from "./supplierDataRepository.js";
-import { WorkerController } from "./workerController.js";
+import { SupplierApi } from "../api/supplierApi.js";
+import { loadConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { createDb } from "../db/db.js";
+import { SupplierDataRepository } from "../repositories/supplierDataRepository.js";
+import { normalizeSupplierProduct } from "../sync/productMapper.js";
+import { WorkerController } from "../sync/workerController.js";
 
 const config = loadConfig();
 const worker = new WorkerController(config);

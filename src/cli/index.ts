@@ -1,6 +1,6 @@
-import { loadConfig } from "./config.js";
-import { logger } from "./logger.js";
-import { syncProducts } from "./syncProducts.js";
+import { loadConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { syncProducts } from "../sync/syncProducts.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();

@@ -1,6 +1,6 @@
-import { loadConfig } from "./config.js";
-import { logger } from "./logger.js";
-import { WorkerController } from "./workerController.js";
+import { loadConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { WorkerController } from "../sync/workerController.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();

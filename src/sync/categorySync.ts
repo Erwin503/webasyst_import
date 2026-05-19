@@ -1,8 +1,9 @@
-import { AppConfig } from "./config.js";
-import { CategoryMapStore } from "./categoryMapStore.js";
-import { logger } from "./logger.js";
-import { SupplierCategory, SupplierProduct, WebasystCategory } from "./types.js";
-import { WebasystApi, WebasystCategoryTreeItem } from "./webasystApi.js";
+import { WebasystApi, WebasystCategoryTreeItem } from "../api/webasystApi.js";
+import { AppConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { CategoryMapStore } from "../repositories/categoryMapStore.js";
+import { SupplierDataRepository } from "../repositories/supplierDataRepository.js";
+import { SupplierCategory, SupplierProduct, WebasystCategory } from "../types/domain.js";
 
 export type CategorySyncResult = {
   categoryIds: Map<string, number>;
@@ -16,7 +17,8 @@ export async function syncCategories(
   categories: SupplierCategory[],
   products: SupplierProduct[],
   config: AppConfig,
-  webasystApi: WebasystApi
+  webasystApi: WebasystApi,
+  supplierDataRepository?: SupplierDataRepository
 ): Promise<CategorySyncResult> {
   const result: CategorySyncResult = {
     categoryIds: new Map(),
@@ -34,8 +36,8 @@ export async function syncCategories(
   }
 
   const usedCategoryKeys = collectUsedCategoryKeys(products);
-  const store = new CategoryMapStore(config.categoryMapPath);
-  await store.load();
+  const store = supplierDataRepository?.enabled ? undefined : new CategoryMapStore(config.categoryMapPath);
+  await store?.load();
 
   const existingTree = config.dryRun ? [] : await webasystApi.getCategoryTree(config.webasyst.preorderRootCategoryId);
   const existingByParentAndName = indexWebasystCategories(existingTree);
@@ -49,7 +51,7 @@ export async function syncCategories(
     }
 
     const parentWebasystId = category.parentId
-      ? result.categoryIds.get(category.parentId) ?? store.get(category.parentId)?.webasyst_category_id
+      ? result.categoryIds.get(category.parentId) ?? (await getStoredCategoryId(category.parentId, supplierDataRepository, store))
       : config.webasyst.preorderRootCategoryId;
 
     if (!parentWebasystId) {
@@ -62,17 +64,13 @@ export async function syncCategories(
     }
 
     const payload = mapSupplierCategoryToWebasyst(category, parentWebasystId);
-    const mapEntry = store.get(key);
+    const mapEntry = await getStoredCategoryId(key, supplierDataRepository, store);
 
     if (mapEntry) {
-      setResolvedCategoryId(result.categoryIds, category, mapEntry.webasyst_category_id);
+      setResolvedCategoryId(result.categoryIds, category, mapEntry);
       if (!config.dryRun) {
-        await webasystApi.updateCategory(mapEntry.webasyst_category_id, payload);
-        store.set(key, {
-          webasyst_category_id: mapEntry.webasyst_category_id,
-          name: category.name,
-          parent_supplier_category_id: category.parentId
-        });
+        await webasystApi.updateCategory(mapEntry, payload);
+        await saveCategoryMapping(key, mapEntry, category, supplierDataRepository, store);
       }
       result.updated += 1;
       continue;
@@ -83,11 +81,7 @@ export async function syncCategories(
       setResolvedCategoryId(result.categoryIds, category, existing.id);
       if (!config.dryRun) {
         await webasystApi.updateCategory(existing.id, payload);
-        store.set(key, {
-          webasyst_category_id: existing.id,
-          name: category.name,
-          parent_supplier_category_id: category.parentId
-        });
+        await saveCategoryMapping(key, existing.id, category, supplierDataRepository, store);
       }
       result.linkedExisting += 1;
       logger.info("Linked existing Webasyst category to supplier category", {
@@ -116,11 +110,7 @@ export async function syncCategories(
       throw new Error(`Webasyst category create response did not contain id for supplier category ${key}`);
     }
 
-    store.set(key, {
-      webasyst_category_id: createdId,
-      name: category.name,
-      parent_supplier_category_id: category.parentId
-    });
+    await saveCategoryMapping(key, createdId, category, supplierDataRepository, store);
     setResolvedCategoryId(result.categoryIds, category, createdId);
     existingByParentAndName.set(existingCategoryKey(parentWebasystId, category.name), {
       id: createdId,
@@ -136,11 +126,40 @@ export async function syncCategories(
   }
 
   if (!config.dryRun) {
-    await store.save();
+    await store?.save();
   }
 
   logger.info("Category sync finished", resultWithoutMap(result));
   return result;
+}
+
+async function getStoredCategoryId(
+  key: string,
+  supplierDataRepository?: SupplierDataRepository,
+  store?: CategoryMapStore
+): Promise<number | undefined> {
+  if (supplierDataRepository?.enabled) {
+    return (await supplierDataRepository.getCategoryMapping(key))?.webasystCategoryId;
+  }
+  return store?.get(key)?.webasyst_category_id;
+}
+
+async function saveCategoryMapping(
+  key: string,
+  webasystCategoryId: number,
+  category: SupplierCategory,
+  supplierDataRepository?: SupplierDataRepository,
+  store?: CategoryMapStore
+): Promise<void> {
+  if (supplierDataRepository?.enabled) {
+    await supplierDataRepository.saveCategoryMapping(key, webasystCategoryId);
+    return;
+  }
+  store?.set(key, {
+    webasyst_category_id: webasystCategoryId,
+          name: category.name,
+          parent_supplier_category_id: category.parentId
+  });
 }
 
 export function resolveProductCategoryId(

@@ -1,6 +1,6 @@
-import { AppConfig } from "./config.js";
-import { RawSupplierProduct } from "./supplierApi.js";
-import { SupplierProduct, WebasystProduct, WebasystSku } from "./types.js";
+import { RawSupplierProduct } from "../api/supplierApi.js";
+import { AppConfig } from "../config/config.js";
+import { SupplierProduct, WebasystProduct, WebasystSku } from "../types/domain.js";
 
 const PREORDER_TEXT = "Товар доступен под заказ. Срок поставки уточняется после оформления заказа.";
 

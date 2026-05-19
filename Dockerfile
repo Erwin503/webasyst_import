@@ -27,4 +27,4 @@ RUN useradd --create-home --uid 10001 appuser \
 USER appuser
 
 ENTRYPOINT ["node", "docker-entrypoint.cjs"]
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/cli/index.js"]

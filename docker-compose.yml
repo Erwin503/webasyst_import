@@ -17,7 +17,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-    command: ["node", "dist/worker.js"]
+    command: ["node", "dist/cli/worker.js"]
     restart: unless-stopped
 
   supplier-admin:
@@ -28,7 +28,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
-    command: ["node", "dist/adminServer.js"]
+    command: ["node", "dist/server/adminServer.js"]
     ports:
       - "${ADMIN_PORT:-3000}:${ADMIN_PORT:-3000}"
     restart: unless-stopped

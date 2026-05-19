@@ -1,7 +1,7 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
-import { AppConfig } from "./config.js";
-import { logger } from "./logger.js";
-import { SupplierCategory } from "./types.js";
+import { AppConfig } from "../config/config.js";
+import { logger } from "../config/logger.js";
+import { SupplierCategory } from "../types/domain.js";
 
 type JsonRpcRequest = {
   request: {
