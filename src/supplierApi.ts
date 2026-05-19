@@ -132,8 +132,47 @@ export class SupplierApi {
       if (importLimit && merged.length >= importLimit) break;
     }
 
-    await this.attachImages(merged);
     return merged;
+  }
+
+  async getImageUrlsBySkus(skus: Array<string | number>): Promise<Map<string, string[]>> {
+    await this.login();
+    const uniqueSkus = [...new Set(skus.map((sku) => String(sku)).filter(Boolean))];
+    const result = new Map<string, string[]>();
+    if (uniqueSkus.length === 0) return result;
+
+    logger.info("Fetching supplier image URLs", { products: uniqueSkus.length });
+    for (const chunk of chunks(uniqueSkus.map(toSupplierSkuFilterValue), 100)) {
+      const response = await this.rpc<{ product_images: ImageRow[]; total: number }>({
+        request: {
+          method: "read_new",
+          model: "products_clients_images",
+          module: "platform"
+        },
+        filter: [
+          {
+            operator: "IN",
+            property: "sku",
+            value: chunk
+          }
+        ]
+      });
+
+      const images = (response.data?.product_images ?? [])
+        .filter((image) => !image.deleted)
+        .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+
+      for (const image of images) {
+        const key = String(image.sku);
+        const urls = result.get(key) ?? [];
+        urls.push(`${this.config.supplier.baseUrl}/${image.url.replace(/^\//, "")}?size=original`);
+        result.set(key, urls);
+      }
+
+      await sleep(550);
+    }
+
+    return result;
   }
 
   async downloadImage(url: string): Promise<DownloadedImage> {
@@ -220,43 +259,6 @@ export class SupplierApi {
     }
   }
 
-  private async attachImages(products: RawSupplierProduct[]): Promise<void> {
-    const productsWithImages = products.filter((product) => product.has_image);
-    if (productsWithImages.length === 0) return;
-
-    logger.info("Fetching supplier image URLs", { products: productsWithImages.length });
-    const bySku = new Map(productsWithImages.map((product) => [String(product.sku), product]));
-    for (const chunk of chunks(productsWithImages.map((product) => product.sku), 100)) {
-      const response = await this.rpc<{ product_images: ImageRow[]; total: number }>({
-        request: {
-          method: "read_new",
-          model: "products_clients_images",
-          module: "platform"
-        },
-        filter: [
-          {
-            operator: "IN",
-            property: "sku",
-            value: chunk
-          }
-        ]
-      });
-
-      const images = (response.data?.product_images ?? [])
-        .filter((image) => !image.deleted)
-        .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-
-      for (const image of images) {
-        const product = bySku.get(String(image.sku));
-        if (product) {
-          product.imageUrls.push(`${this.config.supplier.baseUrl}/${image.url.replace(/^\//, "")}?size=original`);
-        }
-      }
-
-      await sleep(550);
-    }
-  }
-
   private async staticGet<T>(path: string): Promise<T> {
     if (!this.session) {
       throw new Error("Supplier session is required before static catalog request");
@@ -336,6 +338,10 @@ function chunks<T>(items: T[], size: number): T[][] {
     result.push(items.slice(index, index + size));
   }
   return result;
+}
+
+function toSupplierSkuFilterValue(sku: string): string | number {
+  return /^\d+$/.test(sku) ? Number(sku) : sku;
 }
 
 function sleep(ms: number): Promise<void> {

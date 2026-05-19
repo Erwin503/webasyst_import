@@ -13,6 +13,7 @@ async function main(): Promise<void> {
   console.log(`updated: ${stats.updated}`);
   console.log(`skipped: ${stats.skipped}`);
   console.log(`errors: ${stats.errors}`);
+  console.log(`duration: ${Math.round(stats.durationMs / 100) / 10}s`);
 
   if (stats.errors > 0) {
     process.exitCode = 1;

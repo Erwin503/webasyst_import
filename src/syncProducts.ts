@@ -16,9 +16,11 @@ export type SyncStats = {
   updated: number;
   skipped: number;
   errors: number;
+  durationMs: number;
 };
 
 export async function syncProducts(config: AppConfig): Promise<SyncStats> {
+  const startedAt = Date.now();
   const supplierApi = new SupplierApi(config);
   const webasystApi = new WebasystApi(config);
   const supplierDataRepository = new SupplierDataRepository(createDb(config));
@@ -32,22 +34,20 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
   await supplierDataRepository.saveSnapshot(supplierCategories, allProducts);
   const categoryRules = supplierDataRepository.enabled ? await supplierDataRepository.getCategoryRules() : undefined;
   const products = categoryRules ? allProducts.filter((product) => isProductCategoryEnabled(product, categoryRules.enabledCategoryKeys)) : allProducts;
+  if (!config.dryRun) {
+    await attachImagesForSelectedProducts(supplierApi, products);
+  } else {
+    logger.info("Supplier image URL fetching skipped in DRY_RUN");
+  }
   const precheck = products.map((product) => shouldSkipProduct(product));
-  await new TelegramNotifier(config).notifySupplierProductsFetched({
-    source: "syncProducts",
-    products,
-    valid: precheck.filter((reason) => !reason).length,
-    skipped: precheck.filter(Boolean).length,
-    importLimit: config.importLimit,
-    dryRun: config.dryRun
-  });
   const categorySyncResult = await syncCategories(supplierCategories, products, config, webasystApi);
   const stats: SyncStats = {
     totalReceived: allProducts.length,
     created: 0,
     updated: 0,
     skipped: 0,
-    errors: 0
+    errors: 0,
+    durationMs: 0
   };
 
   logger.info("Starting sync", {
@@ -147,11 +147,39 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
     });
   }
 
-    logger.info("Sync finished", stats);
+    stats.durationMs = Date.now() - startedAt;
+    await new TelegramNotifier(config).notifySupplierProductsFetched({
+      source: "syncProducts",
+      products,
+      valid: precheck.filter((reason) => !reason).length,
+      skipped: precheck.filter(Boolean).length,
+      importLimit: config.importLimit,
+      dryRun: config.dryRun,
+      durationMs: stats.durationMs
+    });
+    logger.info("Sync finished", {
+      ...stats,
+      durationSeconds: Math.round(stats.durationMs / 100) / 10
+    });
     return stats;
   } finally {
     await supplierDataRepository.destroy();
   }
+}
+
+async function attachImagesForSelectedProducts(supplierApi: SupplierApi, products: SupplierProduct[]): Promise<void> {
+  const imageSkus = products
+    .filter((product) => supplierProductHasImage(product))
+    .map((product) => product.sku);
+
+  const imagesBySku = await supplierApi.getImageUrlsBySkus(imageSkus);
+  for (const product of products) {
+    product.images = imagesBySku.get(product.sku) ?? [];
+  }
+}
+
+function supplierProductHasImage(product: SupplierProduct): boolean {
+  return Boolean((product.raw as { has_image?: boolean } | undefined)?.has_image);
 }
 
 async function hideMissingSupplierProducts(

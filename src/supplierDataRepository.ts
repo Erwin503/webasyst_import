@@ -127,6 +127,7 @@ export class SupplierDataRepository {
       updated_count: stats?.updated ?? 0,
       skipped_count: stats?.skipped ?? 0,
       error_count: stats?.errors ?? 0,
+      duration_ms: stats?.durationMs ?? null,
       error_message: error instanceof Error ? error.message : error ? String(error) : null,
       finished_at: new Date()
     });
@@ -255,6 +256,7 @@ export type SyncRunStats = {
   updated: number;
   skipped: number;
   errors: number;
+  durationMs?: number;
 };
 
 export type CategoryRules = {

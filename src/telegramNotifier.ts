@@ -17,6 +17,7 @@ export type SupplierProductsLog = {
   skipped: number;
   importLimit?: number;
   dryRun: boolean;
+  durationMs?: number;
 };
 
 export class TelegramNotifier {
@@ -91,14 +92,15 @@ export class TelegramNotifier {
 
 function buildSupplierProductsMessage(log: SupplierProductsLog, requestCount: number): string {
   return [
-    "<b>Сверка товаров поставщика</b>",
-    `Источник: ${escapeHtml(log.source)}`,
-    `Запрос №: ${requestCount}`,
-    `Получено товаров: ${log.products.length}`,
-    `Валидных к импорту: ${log.valid}`,
-    `Пропущено: ${log.skipped}`,
-    `IMPORT_LIMIT: ${log.importLimit ?? "не задан"}`,
-    `DRY_RUN: ${log.dryRun ? "true" : "false"}`
+    "<b>\u0421\u0432\u0435\u0440\u043a\u0430 \u0442\u043e\u0432\u0430\u0440\u043e\u0432 \u043f\u043e\u0441\u0442\u0430\u0432\u0449\u0438\u043a\u0430</b>",
+    `\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: ${escapeHtml(log.source)}`,
+    `\u0417\u0430\u043f\u0440\u043e\u0441 \u2116: ${requestCount}`,
+    `\u041f\u043e\u043b\u0443\u0447\u0435\u043d\u043e \u0442\u043e\u0432\u0430\u0440\u043e\u0432: ${log.products.length}`,
+    `\u0412\u0430\u043b\u0438\u0434\u043d\u044b\u0445 \u043a \u0438\u043c\u043f\u043e\u0440\u0442\u0443: ${log.valid}`,
+    `\u041f\u0440\u043e\u043f\u0443\u0449\u0435\u043d\u043e: ${log.skipped}`,
+    `IMPORT_LIMIT: ${log.importLimit ?? "\u043d\u0435 \u0437\u0430\u0434\u0430\u043d"}`,
+    `DRY_RUN: ${log.dryRun ? "true" : "false"}`,
+    log.durationMs === undefined ? undefined : `\u0412\u0440\u0435\u043c\u044f: ${Math.round(log.durationMs / 100) / 10} \u0441`
   ].filter((line): line is string => line !== undefined).join("\n");
 }
 

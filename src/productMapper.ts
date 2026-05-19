@@ -54,7 +54,7 @@ export function normalizeSupplierProduct(raw: RawSupplierProduct): SupplierProdu
 export function mapSupplierToWebasyst(product: SupplierProduct, config: AppConfig, categoryId?: number, markupPercent?: number): WebasystProduct {
   const markup = markupPercent ?? config.priceMarkupPercent;
   const finalPrice = roundMoney(product.price * (1 + markup / 100));
-  const stock = resolveStock(product, config);
+  const stock = 10;
   const sku: WebasystSku = {
     sku: product.sku || product.id,
     name: product.sku || product.id,

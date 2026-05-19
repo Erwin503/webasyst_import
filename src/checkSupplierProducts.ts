@@ -19,7 +19,7 @@ async function main(): Promise<void> {
     .map((product) => ({ product, reason: shouldSkipProduct(product) }))
     .filter((item) => item.reason);
   const valid = products.length - skipped.length;
-  const withImages = products.filter((product) => (product.images?.length ?? 0) > 0).length;
+  const withSupplierImageFlag = products.filter((product) => Boolean((product.raw as { has_image?: boolean } | undefined)?.has_image)).length;
   const withCategoryPath = products.filter((product) => (product.supplierCategoryPath?.length ?? 0) > 0).length;
 
   await new TelegramNotifier(config).notifySupplierProductsFetched({
@@ -37,7 +37,8 @@ async function main(): Promise<void> {
   console.log(`valid for import: ${valid}`);
   console.log(`skipped by mapper: ${skipped.length}`);
   console.log(`with category path: ${withCategoryPath}`);
-  console.log(`with images: ${withImages}`);
+  console.log(`with supplier image flag: ${withSupplierImageFlag}`);
+  console.log("image URLs: not fetched in supplier-only check");
   console.log(`import limit: ${config.importLimit ?? "none"}`);
 
   console.log("");
