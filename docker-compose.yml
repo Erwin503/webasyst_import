@@ -17,7 +17,7 @@ services:
       retries: 5
       start_period: 15s
     ports:
-      - "3306:3306"  # Для отладки
+      - "3306:3306" # Для отладки
 
   supplier-sync:
     build:
@@ -48,20 +48,26 @@ services:
 
   supplier-admin:
     build:
-      context: .
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data
-    command: ["node", "dist/server/adminServer.js"]
-    ports:
-      - "${ADMIN_HOST_PORT:-3000}:3000"
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-
+      build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+    - MYSQL_HOST=db
+    - MYSQL_PORT=3306
+    - MYSQL_USER=supplier_user # ← меняем с root на supplier_user
+    - MYSQL_PASSWORD=supplier123 # ← пароль для supplier_user
+    - MYSQL_DATABASE=supplier_db
+    - MYSQL_ROOT_PASSWORD=root123
+    - MYSQL_ENABLED=true
+  volumes:
+    - ./data:/app/data
+  command: ["node", "dist/server/adminServer.js"]
+  ports:
+    - "3000:3000"
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
   db-migrate:
     build:
       context: .
