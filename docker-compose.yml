@@ -3,21 +3,23 @@ services:
     image: mysql:8.0
     container_name: supplier-db
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - MYSQL_ROOT_PASSWORD=root123
-      - MYSQL_DATABASE=supplier_db
-      - MYSQL_USER=supplier_user
-      - MYSQL_PASSWORD=supplier123
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot123"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
     ports:
-      - "3306:3306" # Для отладки
+      - "3306:3306"  # Для отладки
 
   supplier-sync:
     build:
@@ -25,6 +27,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
     volumes:
       - ./data:/app/data
     restart: "no"
@@ -38,6 +43,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
     volumes:
       - ./data:/app/data
     command: ["node", "dist/cli/worker.js"]
@@ -53,7 +61,8 @@ services:
     env_file:
       - .env
     environment:
-      MYSQL_HOST: db
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
     volumes:
       - ./data:/app/data
     command: ["node", "dist/server/adminServer.js"]
@@ -63,12 +72,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
   db-migrate:
     build:
       context: .
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
     command: ["npx", "knex", "migrate:latest", "--knexfile", "knexfile.cjs"]
     profiles:
       - tools
