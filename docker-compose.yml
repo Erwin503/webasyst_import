@@ -3,21 +3,21 @@ services:
     image: mysql:8.0
     container_name: supplier-db
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=root123
+      - MYSQL_DATABASE=supplier_db
+      - MYSQL_USER=supplier_user
+      - MYSQL_PASSWORD=supplier123
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot123"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+    ports:
+      - "3306:3306"  # Для отладки
 
   supplier-sync:
     build:
