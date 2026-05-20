@@ -48,26 +48,21 @@ services:
 
   supplier-admin:
     build:
-      build:
-    context: .
-    dockerfile: Dockerfile
-  environment:
-    - MYSQL_HOST=db
-    - MYSQL_PORT=3306
-    - MYSQL_USER=supplier_user # ← меняем с root на supplier_user
-    - MYSQL_PASSWORD=supplier123 # ← пароль для supplier_user
-    - MYSQL_DATABASE=supplier_db
-    - MYSQL_ROOT_PASSWORD=root123
-    - MYSQL_ENABLED=true
-  volumes:
-    - ./data:/app/data
-  command: ["node", "dist/server/adminServer.js"]
-  ports:
-    - "3000:3000"
-  restart: unless-stopped
-  depends_on:
-    db:
-      condition: service_healthy
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: db
+    volumes:
+      - ./data:/app/data
+    command: ["node", "dist/server/adminServer.js"]
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
   db-migrate:
     build:
       context: .
