@@ -1,4 +1,24 @@
 services:
+  db:
+    image: mysql:8.0
+    container_name: supplier-db
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=root123
+      - MYSQL_DATABASE=supplier_db
+      - MYSQL_USER=supplier_user
+      - MYSQL_PASSWORD=supplier123
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    ports:
+      - "3306:3306"
+
   supplier-sync:
     build:
       context: .
@@ -9,6 +29,9 @@ services:
       - ./.env:/app/.env:ro
       - ./data:/app/data
     restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
 
   supplier-worker:
     build:
@@ -21,6 +44,9 @@ services:
       - ./data:/app/data
     command: ["node", "dist/cli/worker.js"]
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
 
   supplier-admin:
     build:
@@ -28,13 +54,19 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
     volumes:
       - ./.env:/app/.env:ro
       - ./data:/app/data
     command: ["node", "dist/server/adminServer.js"]
     ports:
-      - "${ADMIN_PORT:-3000}:${ADMIN_PORT:-3000}"
+      - "3000:3000"
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
 
   db-migrate:
     build:
@@ -47,3 +79,9 @@ services:
     command: ["npx", "knex", "migrate:latest", "--knexfile", "knexfile.cjs"]
     profiles:
       - tools
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:
