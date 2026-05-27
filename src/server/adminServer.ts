@@ -142,9 +142,13 @@ const adminHtml = String.raw`<!doctype html>
     button.loading { opacity: 0.7; cursor: wait; }
     button:disabled { cursor: wait; }
     input[type="number"] { width: 90px; padding: 6px; }
+    .markup-label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .markup-control { display: inline-flex; align-items: center; gap: 2px; }
+    .markup-control input { width: 72px; padding: 6px; }
+    .markup-control button { width: 26px; height: 28px; padding: 0; line-height: 1; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .tree ul { list-style: none; margin: 0 0 0 24px; padding: 0; }
-    .node { display: grid; grid-template-columns: 28px minmax(260px, 1fr) 130px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid #eef1f4; }
+    .node { display: grid; grid-template-columns: 28px minmax(240px, 1fr) 210px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid #eef1f4; }
     .toggle { width: 24px; height: 24px; padding: 0; line-height: 1; }
     .toggle.empty { visibility: hidden; }
     li.collapsed > ul { display: none; }
@@ -222,7 +226,7 @@ const adminHtml = String.raw`<!doctype html>
       if (!nodes || nodes.length === 0) return '<ul></ul>';
       return '<ul>' + nodes.map((node) => '<li class="' + ((node.children || []).length ? 'collapsed' : '') + '">' +
         '<div class="node"><button type="button" class="toggle ' + ((node.children || []).length ? '' : 'empty') + '">+</button><label><input type="checkbox" data-key="' + esc(node.supplierCategoryKey) + '" ' + (node.enabled ? 'checked' : '') + '> ' +
-        esc(node.path.join(' / ')) + '</label><label>Наценка % <input type="number" step="0.01" data-markup="' + esc(node.supplierCategoryKey) + '" value="' + (node.markupPercent ?? '') + '"></label></div>' +
+        esc(node.path.join(' / ')) + '</label><label class="markup-label">Наценка % <span class="markup-control"><input type="text" inputmode="decimal" data-markup="' + esc(node.supplierCategoryKey) + '" value="' + (node.markupPercent ?? '') + '"><button type="button" data-markup-step="' + esc(node.supplierCategoryKey) + '" data-step="1">▲</button><button type="button" data-markup-step="' + esc(node.supplierCategoryKey) + '" data-step="-1">▼</button></span></label></div>' +
         renderTree(node.children || []) + '</li>').join('') + '</ul>';
     }
     function bindCategoryTree() {
@@ -240,11 +244,21 @@ const adminHtml = String.raw`<!doctype html>
       });
       document.querySelectorAll('#categories [data-markup]').forEach((input) => {
         input.addEventListener('input', () => {
+          input.value = sanitizeMarkupInput(input.value);
           const li = input.closest('li');
           li.querySelectorAll('ul [data-markup]').forEach((child) => {
             child.value = input.value;
           });
           clearParentMarkups(input);
+        });
+      });
+      document.querySelectorAll('#categories [data-markup-step]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const key = button.getAttribute('data-markup-step');
+          const input = document.querySelector('[data-markup="' + cssEscape(key) + '"]');
+          const current = parseMarkupNumber(sanitizeMarkupInput(input.value)) ?? 0;
+          input.value = String(Math.max(-100, current + Number(button.getAttribute('data-step'))));
+          input.dispatchEvent(new Event('input', { bubbles: true }));
         });
       });
       document.querySelectorAll('#categories .toggle').forEach((button) => {
@@ -306,8 +320,35 @@ const adminHtml = String.raw`<!doctype html>
         const key = checkbox.getAttribute('data-key');
         const markupInput = document.querySelector('[data-markup="' + cssEscape(key) + '"]');
         const rawMarkup = markupInput.value.trim();
-        return { supplierCategoryKey: key, enabled: checkbox.checked, markupPercent: rawMarkup === '' ? null : Number(rawMarkup) };
+        const markupPercent = rawMarkup === '' || rawMarkup === '-' ? null : parseMarkupValue(rawMarkup);
+        if (markupPercent === undefined) throw new Error('Некорректная наценка: ' + rawMarkup);
+        return { supplierCategoryKey: key, enabled: checkbox.checked, markupPercent };
       });
+    }
+    function parseMarkupValue(value) {
+      const parsed = parseMarkupNumber(value);
+      if (parsed === null) return null;
+      if (!Number.isFinite(parsed) || parsed < -100) return undefined;
+      return parsed;
+    }
+    function parseMarkupNumber(value) {
+      const normalized = String(value).trim().replace(/[−–—]/g, '-').replace(',', '.');
+      if (normalized === '' || normalized === '-') return null;
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    function sanitizeMarkupInput(value) {
+      let normalized = String(value).replace(/[−–—]/g, '-').replace(/\./g, ',').replace(/[^\d,-]/g, '');
+      const negative = normalized.includes('-');
+      normalized = normalized.replace(/-/g, '');
+      const commaIndex = normalized.indexOf(',');
+      if (commaIndex !== -1) {
+        normalized = normalized.slice(0, commaIndex + 1) + normalized.slice(commaIndex + 1).replace(/,/g, '');
+      }
+      normalized = (negative ? '-' : '') + normalized;
+      const parsed = parseMarkupNumber(normalized);
+      if (parsed !== undefined && parsed !== null && parsed < -100) return '-100';
+      return normalized;
     }
     async function refreshWorker() {
       const data = await api('/api/worker/status');

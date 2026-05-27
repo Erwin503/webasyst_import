@@ -6,6 +6,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./.env:/app/.env:ro
       - ./data:/app/data
     restart: "no"
 
@@ -16,6 +17,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./.env:/app/.env:ro
       - ./data:/app/data
     command: ["node", "dist/cli/worker.js"]
     restart: unless-stopped
@@ -27,6 +29,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./.env:/app/.env:ro
       - ./data:/app/data
     command: ["node", "dist/server/adminServer.js"]
     ports:
@@ -39,6 +42,8 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    volumes:
+      - ./.env:/app/.env:ro
     command: ["npx", "knex", "migrate:latest", "--knexfile", "knexfile.cjs"]
     profiles:
       - tools

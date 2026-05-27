@@ -1,5 +1,7 @@
-import "dotenv/config";
 import path from "node:path";
+import dotenv from "dotenv";
+
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 export type PreorderStockMode = "null" | "fixed" | "supplier";
 export type SupplierCategoryMode = "single" | "mirror";
