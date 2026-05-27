@@ -76,22 +76,48 @@ async function main(): Promise<void> {
   }));
 
   app.get("/api/worker/status", asyncJson(async (_req, res) => {
-    res.json({ ...worker.status(), intervalHours: await worker.getIntervalHours() });
+    res.json({ ...(await worker.status()), intervalHours: await worker.getIntervalHours() });
   }));
 
   app.post("/api/worker/start", asyncJson(async (_req, res) => {
     await worker.start();
-    res.json({ ok: true, status: worker.status() });
+    res.json({ ok: true, status: await worker.status() });
   }));
 
   app.post("/api/worker/stop", asyncJson(async (_req, res) => {
     worker.stop();
-    res.json({ ok: true, status: worker.status() });
+    res.json({ ok: true, status: await worker.status() });
   }));
 
   app.post("/api/worker/settings", asyncJson(async (req, res) => {
     await worker.setIntervalHours(Number(req.body.intervalHours));
-    res.json({ ok: true, status: worker.status() });
+    await worker.setStartTime(req.body.startTime);
+    res.json({ ok: true, status: await worker.status() });
+  }));
+
+  app.get("/api/telegram/settings", asyncJson(async (_req, res) => {
+    const repo = new SupplierDataRepository(createDb(config));
+    try {
+      const storedChatIds = parseChatIds(await repo.getSetting("telegram_chat_ids"));
+      res.json({
+        botConfigured: Boolean(config.telegram.botToken),
+        chatIds: storedChatIds.length > 0 ? storedChatIds : config.telegram.chatIds,
+        source: storedChatIds.length > 0 ? "database" : "env"
+      });
+    } finally {
+      await repo.destroy();
+    }
+  }));
+
+  app.post("/api/telegram/settings", asyncJson(async (req, res) => {
+    const chatIds = parseChatIds(String(req.body.chatIds ?? ""));
+    const repo = new SupplierDataRepository(createDb(config));
+    try {
+      await repo.setSetting("telegram_chat_ids", chatIds.join(","));
+      res.json({ ok: true, chatIds });
+    } finally {
+      await repo.destroy();
+    }
   }));
 
   app.get("/api/sync/runs", asyncJson(async (_req, res) => {
@@ -125,6 +151,13 @@ function asyncJson(handler: (req: Request, res: Response) => Promise<void>) {
   };
 }
 
+function parseChatIds(value?: string): string[] {
+  return (value ?? "")
+    .split(/[,\n;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 const adminHtml = String.raw`<!doctype html>
 <html lang="ru">
 <head>
@@ -132,64 +165,97 @@ const adminHtml = String.raw`<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Supplier Sync Admin</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1f2937; }
-    header { background: #111827; color: white; padding: 16px 24px; }
-    main { padding: 20px; max-width: 1280px; margin: auto; }
-    section { background: white; border: 1px solid #d7dce2; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-    button { padding: 8px 12px; border: 1px solid #aab2bd; border-radius: 6px; background: #fff; cursor: pointer; }
-    button.primary { background: #14532d; color: white; border-color: #14532d; }
-    button.danger { background: #7f1d1d; color: white; border-color: #7f1d1d; }
+    * { box-sizing: border-box; }
+    body { font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f4f6f8; color: #172033; }
+    header { background: #16202f; color: white; padding: 18px 28px; border-bottom: 3px solid #2f7d57; }
+    header h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: 0; }
+    main { padding: 22px; max-width: 1360px; margin: auto; }
+    section { background: white; border: 1px solid #d9e0e7; border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+    section h2 { margin: 0 0 12px; font-size: 17px; }
+    button { padding: 8px 12px; border: 1px solid #aab5c2; border-radius: 6px; background: #fff; cursor: pointer; color: #172033; }
+    button:hover { background: #f3f6f8; }
+    button.primary { background: #17613f; color: white; border-color: #17613f; }
+    button.primary:hover { background: #124f34; }
+    button.danger { background: #8a2424; color: white; border-color: #8a2424; }
+    button.danger:hover { background: #731d1d; }
     button.loading { opacity: 0.7; cursor: wait; }
     button:disabled { cursor: wait; }
-    input[type="number"] { width: 90px; padding: 6px; }
+    input, textarea { border: 1px solid #b8c2cc; border-radius: 6px; background: #fff; color: #172033; }
+    input[type="number"], input[type="time"] { width: 100px; padding: 7px; }
+    textarea { width: 100%; min-height: 86px; padding: 8px; resize: vertical; font: inherit; }
+    .dashboard { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+    .side-stack { display: grid; gap: 16px; }
     .markup-label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
     .markup-control { display: inline-flex; align-items: center; gap: 2px; }
     .markup-control input { width: 72px; padding: 6px; }
     .markup-control button { width: 26px; height: 28px; padding: 0; line-height: 1; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .field { display: grid; gap: 6px; margin-bottom: 10px; }
+    .field label { font-size: 13px; font-weight: 600; color: #3c4657; }
     .tree ul { list-style: none; margin: 0 0 0 24px; padding: 0; }
     .node { display: grid; grid-template-columns: 28px minmax(240px, 1fr) 210px; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid #eef1f4; }
     .toggle { width: 24px; height: 24px; padding: 0; line-height: 1; }
     .toggle.empty { visibility: hidden; }
     li.collapsed > ul { display: none; }
     .muted { color: #6b7280; }
-    pre { white-space: pre-wrap; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; max-height: 260px; overflow: auto; }
+    .status-line { min-height: 20px; font-size: 13px; color: #536171; }
+    pre { white-space: pre-wrap; background: #101827; color: #e2e8f0; padding: 12px; border-radius: 8px; max-height: 260px; overflow: auto; }
+    @media (max-width: 980px) { .dashboard { grid-template-columns: 1fr; } .node { grid-template-columns: 28px minmax(180px, 1fr); } .markup-label { grid-column: 2; } }
   </style>
 </head>
 <body>
   <header><h1>Supplier Sync Admin</h1></header>
   <main>
-    <section>
-      <h2>Категории</h2>
-      <div class="row">
-        <button id="fetchCategories">Получить категории поставщика</button>
-        <button class="primary" id="saveCategories">Сохранить выбор и наценки</button>
+    <div class="dashboard">
+      <section>
+        <h2>Категории</h2>
+        <div class="row">
+          <button id="fetchCategories">Получить категории поставщика</button>
+          <button class="primary" id="saveCategories">Сохранить выбор и наценки</button>
+        </div>
+        <p class="muted">Выбор родительской категории включает все дочерние. Наценка может быть отрицательной.</p>
+        <div id="categories" class="tree"></div>
+      </section>
+      <div class="side-stack">
+        <section>
+          <h2>Загрузка товаров</h2>
+          <div class="row">
+            <button id="fetchProducts">Получить товары</button>
+            <button class="primary" id="runSync">Загрузить в Webasyst</button>
+          </div>
+        </section>
+        <section>
+          <h2>Worker</h2>
+          <div class="row">
+            <button id="refreshWorker">Обновить статус</button>
+            <button class="primary" id="startWorker">Запустить</button>
+            <button class="danger" id="stopWorker">Остановить</button>
+          </div>
+          <div class="row" style="margin-top: 10px;">
+            <label>Частота, часов <input id="intervalHours" type="number" step="0.1" min="0.1"></label>
+            <label>Время старта <input id="startTime" type="time"></label>
+            <button id="saveInterval">Сохранить</button>
+          </div>
+          <pre id="workerStatus"></pre>
+        </section>
+        <section>
+          <h2>Telegram</h2>
+          <div class="field">
+            <label for="telegramChatIds">Chat ID получателей</label>
+            <textarea id="telegramChatIds" placeholder="1763017158&#10;123456789"></textarea>
+          </div>
+          <div class="row">
+            <button id="refreshTelegram">Обновить</button>
+            <button class="primary" id="saveTelegram">Сохранить chat_id</button>
+          </div>
+          <div id="telegramStatus" class="status-line"></div>
+        </section>
+        <section>
+          <h2>Лог действий</h2>
+          <pre id="log"></pre>
+        </section>
       </div>
-      <p class="muted">Выбор родительской категории включает все дочерние. Наценка может быть отрицательной.</p>
-      <div id="categories" class="tree"></div>
-    </section>
-    <section>
-      <h2>Загрузка товаров</h2>
-      <div class="row">
-        <button id="fetchProducts">Получить товары и сохранить в БД</button>
-        <button class="primary" id="runSync">Загрузить выбранные товары в Webasyst</button>
-      </div>
-    </section>
-    <section>
-      <h2>Worker</h2>
-      <div class="row">
-        <button id="refreshWorker">Обновить статус</button>
-        <button class="primary" id="startWorker">Запустить</button>
-        <button class="danger" id="stopWorker">Остановить</button>
-        <label>Частота, часов <input id="intervalHours" type="number" step="0.1" min="0.1"></label>
-        <button id="saveInterval">Сохранить частоту</button>
-      </div>
-      <pre id="workerStatus"></pre>
-    </section>
-    <section>
-      <h2>Лог действий</h2>
-      <pre id="log"></pre>
-    </section>
+    </div>
   </main>
   <script>
     const log = (value) => {
@@ -354,6 +420,19 @@ const adminHtml = String.raw`<!doctype html>
       const data = await api('/api/worker/status');
       document.getElementById('workerStatus').textContent = JSON.stringify(data, null, 2);
       document.getElementById('intervalHours').value = data.intervalHours;
+      document.getElementById('startTime').value = data.startTime || '';
+    }
+    async function refreshTelegram() {
+      const data = await api('/api/telegram/settings');
+      document.getElementById('telegramChatIds').value = (data.chatIds || []).join('\n');
+      document.getElementById('telegramStatus').textContent = 'Бот: ' + (data.botConfigured ? 'настроен' : 'не настроен') + ' · источник chat_id: ' + data.source;
+    }
+    function collectTelegramChatIds() {
+      return document.getElementById('telegramChatIds').value
+        .split(/[,\n;]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .join(',');
     }
     const esc = (value) => String(value).replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const cssEscape = (value) => String(value).replace(/["\\]/g, '\\$&');
@@ -364,8 +443,10 @@ const adminHtml = String.raw`<!doctype html>
     document.getElementById('refreshWorker').onclick = () => withLoading('refreshWorker', 'Обновляем...', refreshWorker);
     document.getElementById('startWorker').onclick = () => withLoading('startWorker', 'Запускаем...', async () => { log(await api('/api/worker/start', { method: 'POST' })); await refreshWorker(); });
     document.getElementById('stopWorker').onclick = () => withLoading('stopWorker', 'Останавливаем...', async () => { log(await api('/api/worker/stop', { method: 'POST' })); await refreshWorker(); });
-    document.getElementById('saveInterval').onclick = () => withLoading('saveInterval', 'Сохраняем...', async () => { log(await api('/api/worker/settings', { method: 'POST', body: JSON.stringify({ intervalHours: Number(document.getElementById('intervalHours').value) }) })); await refreshWorker(); });
-    loadCategories().then(refreshWorker).catch(log);
+    document.getElementById('saveInterval').onclick = () => withLoading('saveInterval', 'Сохраняем...', async () => { log(await api('/api/worker/settings', { method: 'POST', body: JSON.stringify({ intervalHours: Number(document.getElementById('intervalHours').value), startTime: document.getElementById('startTime').value }) })); await refreshWorker(); });
+    document.getElementById('refreshTelegram').onclick = () => withLoading('refreshTelegram', 'Обновляем...', refreshTelegram);
+    document.getElementById('saveTelegram').onclick = () => withLoading('saveTelegram', 'Сохраняем...', async () => { log(await api('/api/telegram/settings', { method: 'POST', body: JSON.stringify({ chatIds: collectTelegramChatIds() }) })); await refreshTelegram(); });
+    Promise.all([loadCategories(), refreshWorker(), refreshTelegram()]).catch(log);
   </script>
 </body>
 </html>`;

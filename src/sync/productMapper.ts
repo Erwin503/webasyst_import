@@ -34,7 +34,7 @@ export function normalizeSupplierProduct(raw: RawSupplierProduct): SupplierProdu
     id: sku,
     sku,
     name: raw.name || nameFromCharacteristics || sku,
-    description: descriptionFromCharacteristics,
+    description: buildDescription(raw, descriptionFromCharacteristics),
     price: Number(raw.active.price),
     oldPrice: raw.rrp ? Number(raw.rrp) : undefined,
     currency: "RUB",
@@ -71,7 +71,7 @@ export function mapSupplierToWebasyst(product: SupplierProduct, config: AppConfi
     sku.stock = { "0": stock };
   }
 
-  const description = appendPreorderText(product.description ?? "", config.appendPreorderText);
+  const description = appendPreorderText(appendFeaturesToDescription(product.description ?? "", product.features), config.appendPreorderText);
   const params = [
     "preorder=1",
     `supplier_external_id=${escapeParamValue(product.id)}`,
@@ -88,7 +88,6 @@ export function mapSupplierToWebasyst(product: SupplierProduct, config: AppConfi
     sku_type: 0,
     tags: config.preorderTag,
     params,
-    features: mapFeatures(product),
     skus: {
       "0": sku
     }
@@ -119,6 +118,60 @@ function appendPreorderText(description: string, append: boolean): string {
   if (!append) return description;
   if (description.includes(PREORDER_TEXT)) return description;
   return [description.trim(), PREORDER_TEXT].filter(Boolean).join("\n\n");
+}
+
+function appendFeaturesToDescription(
+  description: string,
+  features?: Record<string, string | number | boolean>
+): string {
+  const rows = Object.entries(features ?? {})
+    .filter(([, value]) => value !== "" && value !== undefined)
+    .map(([key, value]) => `${formatFeatureName(key)}: ${value}`);
+
+  if (rows.length === 0) return description;
+
+  return [
+    description.trim(),
+    "Характеристики:",
+    ...rows
+  ].filter(Boolean).join("\n");
+}
+
+function formatFeatureName(value: string): string {
+  const knownNames: Record<string, string> = {
+    supplier_category_id: "ID категории поставщика",
+    part: "Партномер",
+    multiplicity: "Кратность заказа",
+    delivery_days: "Срок доставки, дней",
+    vendor: "Вендор",
+    warranty_months: "Гарантия, месяцев",
+    weight: "Вес",
+    volume: "Объем",
+    supplier_qty_label: "Остаток поставщика",
+    nearest_logistic_center_qty_label: "Остаток ближайшего склада"
+  };
+  return knownNames[value] ?? value;
+}
+
+function buildDescription(raw: RawSupplierProduct, supplierDescription?: string): string | undefined {
+  const lines = [
+    supplierDescription?.trim(),
+    formatDescriptionLine("Бренд", raw.vendor),
+    formatDescriptionLine("Артикул поставщика", raw.sku),
+    formatDescriptionLine("Партномер", raw.part),
+    formatDescriptionLine("Гарантия", raw.warranty ? `${raw.warranty} мес.` : undefined),
+    formatDescriptionLine("Вес", raw.weight === undefined ? undefined : `${raw.weight} кг`),
+    formatDescriptionLine("Объем", raw.volume === undefined ? undefined : `${raw.volume} м3`),
+    formatDescriptionLine("Кратность заказа", raw.active.multiplicity ?? raw.multiplicity),
+    formatDescriptionLine("Срок доставки", raw.active.delivery_days === undefined ? undefined : `${raw.active.delivery_days} дн.`)
+  ].filter(Boolean);
+
+  return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+function formatDescriptionLine(label: string, value: string | number | undefined): string | undefined {
+  if (value === undefined || value === "") return undefined;
+  return `${label}: ${value}`;
 }
 
 function mapFeatures(product: SupplierProduct): Record<string, string | number | boolean> {

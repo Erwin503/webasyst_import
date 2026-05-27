@@ -8,6 +8,7 @@ export type WorkerStatus = {
   running: boolean;
   activeRun: boolean;
   intervalHours: number;
+  startTime?: string;
   nextRunAt?: string;
   lastRunAt?: string;
   lastStats?: SyncStats;
@@ -26,6 +27,11 @@ export class WorkerController {
 
   async start(): Promise<void> {
     if (this.timer) return;
+    const startTime = await this.getStartTime();
+    if (startTime) {
+      await this.scheduleInitialStart(startTime);
+      return;
+    }
     await this.scheduleFromSettings();
     void this.runNow("worker-start");
   }
@@ -84,6 +90,19 @@ export class WorkerController {
     }
   }
 
+  async setStartTime(startTime?: string): Promise<void> {
+    const normalized = normalizeStartTime(startTime);
+    const repo = new SupplierDataRepository(createDb(this.config));
+    try {
+      await repo.setSetting("supplier_sync_start_time", normalized ?? "");
+    } finally {
+      await repo.destroy();
+    }
+    if (this.timer) {
+      await this.scheduleFromSettings();
+    }
+  }
+
   async getIntervalHours(): Promise<number> {
     const repo = new SupplierDataRepository(createDb(this.config));
     try {
@@ -95,11 +114,21 @@ export class WorkerController {
     }
   }
 
-  status(): WorkerStatus {
+  async getStartTime(): Promise<string | undefined> {
+    const repo = new SupplierDataRepository(createDb(this.config));
+    try {
+      return normalizeStartTime(await repo.getSetting("supplier_sync_start_time"));
+    } finally {
+      await repo.destroy();
+    }
+  }
+
+  async status(): Promise<WorkerStatus> {
     return {
       running: Boolean(this.timer),
       activeRun: this.activeRun,
       intervalHours: this.config.supplierSyncIntervalHours,
+      startTime: await this.getStartTime(),
       nextRunAt: this.nextRunAt?.toISOString(),
       lastRunAt: this.lastRunAt?.toISOString(),
       lastStats: this.lastStats,
@@ -109,6 +138,11 @@ export class WorkerController {
 
   private async scheduleFromSettings(): Promise<void> {
     if (this.timer) clearTimeout(this.timer);
+    const startTime = await this.getStartTime();
+    if (!this.lastRunAt && startTime) {
+      await this.scheduleInitialStart(startTime);
+      return;
+    }
     const intervalHours = await this.getIntervalHours();
     this.config.supplierSyncIntervalHours = intervalHours;
     const delayMs = intervalHours * 60 * 60 * 1000;
@@ -117,4 +151,33 @@ export class WorkerController {
       void this.runNow("worker-interval");
     }, delayMs);
   }
+
+  private async scheduleInitialStart(startTime: string): Promise<void> {
+    if (this.timer) clearTimeout(this.timer);
+    const delayMs = millisecondsUntilStartTime(startTime);
+    this.nextRunAt = new Date(Date.now() + delayMs);
+    this.timer = setTimeout(() => {
+      void this.runNow("worker-start-time");
+    }, delayMs);
+  }
+}
+
+function normalizeStartTime(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(trimmed);
+  if (!match) {
+    throw new Error("startTime must be in HH:mm format");
+  }
+  return `${match[1]}:${match[2]}`;
+}
+
+function millisecondsUntilStartTime(startTime: string): number {
+  const [hours, minutes] = startTime.split(":").map(Number);
+  const next = new Date();
+  next.setHours(hours, minutes, 0, 0);
+  if (next.getTime() <= Date.now()) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next.getTime() - Date.now();
 }

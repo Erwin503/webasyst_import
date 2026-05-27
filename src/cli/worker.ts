@@ -9,6 +9,7 @@ async function main(): Promise<void> {
 
   logger.info("Supplier sync worker started", {
     supplierSyncIntervalHours: await worker.getIntervalHours(),
+    supplierSyncStartTime: await worker.getStartTime(),
     dryRun: config.dryRun,
     importLimit: config.importLimit
   });

@@ -136,7 +136,7 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
   }
 
     stats.durationMs = Date.now() - startedAt;
-    await new TelegramNotifier(config).notifySupplierProductsFetched({
+    await new TelegramNotifier(await configWithTelegramSettings(config, supplierDataRepository)).notifySupplierProductsFetched({
       source: "syncProducts",
       products,
       valid: precheck.filter((reason) => !reason).length,
@@ -153,6 +153,29 @@ export async function syncProducts(config: AppConfig): Promise<SyncStats> {
   } finally {
     await supplierDataRepository.destroy();
   }
+}
+
+async function configWithTelegramSettings(
+  config: AppConfig,
+  supplierDataRepository: SupplierDataRepository
+): Promise<AppConfig> {
+  if (!supplierDataRepository.enabled) return config;
+  const storedChatIds = parseChatIds(await supplierDataRepository.getSetting("telegram_chat_ids"));
+  if (storedChatIds.length === 0) return config;
+  return {
+    ...config,
+    telegram: {
+      ...config.telegram,
+      chatIds: storedChatIds
+    }
+  };
+}
+
+function parseChatIds(value?: string): string[] {
+  return (value ?? "")
+    .split(/[,\n;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function attachImagesForSelectedProducts(supplierApi: SupplierApi, products: SupplierProduct[]): Promise<void> {

@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
 const { spawn } = require("node:child_process");
+const path = require("node:path");
+const dotenv = require("dotenv");
 const knex = require("knex");
 const knexConfig = require("./knexfile.cjs");
+
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 main().catch((error) => {
   console.error("[entrypoint] Fatal error", error);

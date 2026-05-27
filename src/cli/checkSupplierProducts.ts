@@ -14,6 +14,9 @@ async function main(): Promise<void> {
   const rawProducts = await supplierApi.getProducts(config.importLimit);
   const products = rawProducts.map(normalizeSupplierProduct);
   await supplierDataRepository.saveSnapshot(supplierCategories, products);
+  const storedChatIds = supplierDataRepository.enabled
+    ? parseChatIds(await supplierDataRepository.getSetting("telegram_chat_ids"))
+    : [];
   await supplierDataRepository.destroy();
   const skipped = products
     .map((product) => ({ product, reason: shouldSkipProduct(product) }))
@@ -22,7 +25,13 @@ async function main(): Promise<void> {
   const withSupplierImageFlag = products.filter((product) => Boolean((product.raw as { has_image?: boolean } | undefined)?.has_image)).length;
   const withCategoryPath = products.filter((product) => (product.supplierCategoryPath?.length ?? 0) > 0).length;
 
-  await new TelegramNotifier(config).notifySupplierProductsFetched({
+  await new TelegramNotifier(storedChatIds.length > 0 ? {
+    ...config,
+    telegram: {
+      ...config.telegram,
+      chatIds: storedChatIds
+    }
+  } : config).notifySupplierProductsFetched({
     source: "checkSupplierProducts",
     products,
     valid,
@@ -77,3 +86,10 @@ main().catch((error) => {
   logger.error("Supplier products check failed", error);
   process.exitCode = 1;
 });
+
+function parseChatIds(value?: string): string[] {
+  return (value ?? "")
+    .split(/[,\n;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
